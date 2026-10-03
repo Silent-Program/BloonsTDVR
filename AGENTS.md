@@ -175,11 +175,36 @@ framing; first person gets the right half. Per-frame is not paranoia: BTD6 creat
 began with `_btdCameras.Clear()`, so a null argument silently emptied the list the viewport code iterated.
 
 **Rule: hook the render loop before theorising.** `RenderProbe.cs` is a Harmony postfix on
-`UnityEngine.Rendering.Universal.UniversalRenderPipeline.Render`, logging which cameras Unity is actually
-asked to draw. BTD6 uses the stock pipeline — no subclass of `UniversalRenderPipeline` or `RenderPipeline`
-exists anywhere in `Assembly-CSharp` — so that list is the real one. One line settles what three rounds of
-reasoning did not: is our camera **absent** (the pipeline skips it — camera setup problem) or **present**
-(it renders — the problem is what it draws)?
+`UniversalRenderPipeline.Render`, logging which cameras Unity is actually asked to draw. BTD6 uses the stock
+pipeline — no subclass of `UniversalRenderPipeline` or `RenderPipeline` exists anywhere in
+`Assembly-CSharp` — so that list is the real one. It settles in one line what three rounds of reasoning
+did not: is our camera **absent** (the pipeline skips it — camera setup problem) or **present** (it renders
+— the problem is what it draws).
+
+Two traps in that probe, both already paid for:
+- **`Render` is an override**, so it is declared on both `RenderPipeline` and `UniversalRenderPipeline` and
+  a name-only `[HarmonyPatch]` throws `AmbiguousMatchException`. Always pass `new[] { typeof(...) }`
+  argument types when patching an override. A single bad attribute aborts the whole `PatchAll`, so one
+  ambiguous probe silently disabled *every* patch in the assembly.
+- **BTD6's match camera is orthographic**: `Scene`, `fov=15`, `depth=5`, `rot=(60,0,0)`. Our depth 100
+  draws after it, which is all a full-screen override needs.
+
+### Never disable BTD6's camera — and never assume the keyboard is broken
+
+Disabling BTD6's camera was tried and is a dead end: it leaves a frame with nothing drawing in it, which
+reads as a frozen screen while the simulation keeps running. `allCamerasCount = 1` (just ours) alongside an
+unchanged on-screen view is the signature. Both cameras render; ours is full-screen at `depth = 100` and
+clears over the top. `V` toggles between the two views.
+
+**Check the working control before believing a null.** Two runs were lost concluding the keyboard was dead
+or the wrong device, because `Keyboard.current` was non-null and that was treated as evidence. It is not.
+`V` is read by the same `InputReader`, through the same device indexer, as `Held(Key.W)` — and `V` worked.
+A hotkey that fires on the same path as the one that does not is proof the path is fine.
+
+So `InputReader` counts **cumulative frames per key** (`held=W123/A0/S0/D0`), not just a per-heartbeat
+snapshot: "never pressed" and "the sample missed it" are identical in a snapshot, and a counter cannot be
+fooled. `LogDeviceDiagnostics` dumps `InputSettings.updateMode` and every device's `enabled` / `added` /
+`deviceId`.
 
 ## UI and input
 

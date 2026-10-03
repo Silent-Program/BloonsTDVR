@@ -22,10 +22,21 @@ namespace BloonsVR
     ///
     /// Patching a plain method works in IL2CPP. It is Unity <i>message</i> methods that silently do not,
     /// which is why this is hooked on the pipeline rather than on some <c>LateUpdate</c>.
+    ///
+    /// The explicit argument types are load-bearing. <c>Render</c> is declared twice on the way up:
+    /// <c>RenderPipeline.Render</c> is virtual and <c>UniversalRenderPipeline.Render</c> overrides it, so a
+    /// name-only lookup finds both and Harmony throws
+    /// <c>AmbiguousMatchException: Ambiguous match for HarmonyMethod[(class=..., methodname=Render)]</c>.
+    /// The first run of this probe failed to apply for exactly that reason and logged nothing at all.
     /// </summary>
     [HarmonyPatch(
         typeof(UnityEngine.Rendering.Universal.UniversalRenderPipeline),
-        nameof(UnityEngine.Rendering.Universal.UniversalRenderPipeline.Render))]
+        nameof(UnityEngine.Rendering.Universal.UniversalRenderPipeline.Render),
+        new[]
+        {
+            typeof(UnityEngine.Rendering.ScriptableRenderContext),
+            typeof(Il2CppSystem.Collections.Generic.List<Camera>),
+        })]
     internal static class RenderProbe
     {
         private const int LogEveryNCalls = 60;

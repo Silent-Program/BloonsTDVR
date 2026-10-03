@@ -143,13 +143,17 @@ namespace BloonsVR
                     return;
 
                 _framesRun++;
+
+                // Before the rig reads anything, so the cumulative key counts cover the same frames.
+                InputReader.Sample();
+
                 if (_framesRun % 60 == 0)
                     Heartbeat();
 
                 _rig.Tick();
                 _placer.Tick();
 
-                // Keep the render probe quiet unless there is a split to explain.
+                // Keep the render probe quiet unless first person is on.
                 RenderProbe.Active = _rig.IsActive;
 
                 // Only steal WASD from BTD6 while we are actually the ones using it.
@@ -303,6 +307,11 @@ namespace BloonsVR
                 $"[BloonsVR] diag rig={(_rig?.IsActive.ToString() ?? "no")} " +
                 $"cash={(model == null ? -1f : model.cash)} " +
                 $"areas={(model?.map?.areas == null ? -1 : model.map.areas.Length)}");
+
+            // Every device, with the flags that decide whether it can receive events at all. This is the
+            // difference between "the Input System is not running" and "this particular device is not
+            // being fed", which look identical from a key read.
+            InputReader.LogDeviceDiagnostics();
         }
 
         /// <summary>

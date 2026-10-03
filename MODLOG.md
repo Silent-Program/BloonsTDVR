@@ -252,6 +252,79 @@ the mod ever asked the engine what it was rendering. Always hook the render loop
 
 ---
 
+## Run log - 2026-10-03 16:43 (build A3F92071) - the split worked, and the keyboard theory died
+
+Reported: *"Pressing V cuts the screen in half with another camera on the left."* So viewports work, both
+cameras render, and disabling BTD6's camera really was the wrong move. The split was then dropped in favour
+of one full-screen camera drawn over the game's, with `V` as a plain toggle.
+
+### The render probe never applied
+
+```
+[ERROR] Failed to apply patch(es) in RenderProbe
+[ERROR] Ambiguous match found.
+HarmonyLib.HarmonyException: Ambiguous match for HarmonyMethod[
+    (class=UnityEngine.Rendering.Universal.UniversalRenderPipeline, methodname=Render, type=Normal, args=undefined)]
+ ---> System.Reflection.AmbiguousMatchException
+    at HarmonyLib.AccessTools.DeclaredMethod(Type type, String name, Type[] parameters, Type[] generics)
+```
+
+**`Render` is declared twice on the way up.** `RenderPipeline.Render(ScriptableRenderContext, List<Camera>)`
+is `virtual` and `UniversalRenderPipeline.Render(...)` overrides it. Harmony's name-only attribute lookup
+sees both and refuses to guess. Fixed by passing explicit argument types:
+
+```csharp
+[HarmonyPatch(typeof(UniversalRenderPipeline), nameof(UniversalRenderPipeline.Render),
+    new[] { typeof(ScriptableRenderContext), typeof(Il2CppSystem.Collections.Generic.List<Camera>) })]
+```
+
+Generalise: **any Harmony `[HarmonyPatch]` on an override is ambiguous unless the argument types are
+given.** The whole `PatchAll` aborted because of it, so one bad attribute silently cost every patch in
+the assembly — check the log for `Failed to apply patch(es)` before believing a probe is running.
+
+### What the rest of the log settled
+
+| Log | Meaning |
+|---|---|
+| `pipeline=UnityEngine.Rendering.Universal.UniversalRenderPipeline` | Stock URP confirmed at runtime, not inferred |
+| `cameras in scene at rig start: 2`, `cams=2` | Ours plus BTD6's. Two, not one |
+| `diag Camera.main  NULL` then `split: 2 BTD6 camera(s)` 0.4 s later | `Camera.main` is null at rig start and non-null shortly after — per-frame re-collection was necessary, not paranoia |
+| `diag sceneCamera name=Scene ortho=True fov=15 depth=5 rot=(60,0,0)` | BTD6's match camera is **orthographic**, FOV 15, pitched 60°, depth 5. Our depth 100 draws after it, so full-screen override needs no viewport tricks |
+| `keys=[kb=1 W0 A0 S0 D0]` while `V` toggles correctly | **The keyboard is not broken** |
+
+### The keyboard was never the problem
+
+`V` is read by `InputReader.PressedThisFrame(Hotkeys.ToggleRig)` — the same device, the same indexer, the
+same file as `Held(Key.W)`. The player pressed `V`, the view changed, and the log shows our own
+`first person ON/OFF` lines. So keyboard events demonstrably reach `InputReader`.
+
+Therefore `W0 A0 S0 D0` can only mean the movement keys were not held at those instants. Two runs had been
+spent on the opposite assumption — that the keyboard was dead or the wrong device — and it was wrong both
+times, because the control case (`V` works) was never checked. `Keyboard.current` being non-null was never
+evidence of anything; a working hotkey on the same path is.
+
+`InputReader` now counts cumulative frames per movement key (`held=W123/A0/S0/D0`) instead of only
+snapshotting one frame per heartbeat, because "never pressed" and "the sample missed it" are
+indistinguishable in a snapshot. `InputReader.LogDeviceDiagnostics` dumps `InputSettings.updateMode` plus
+every device's `enabled` / `added` / `deviceId`, so this is settled by observation from now on.
+
+### Billboard progress, unrequested but worth recording
+
+```
+billboarded 8 of 8 live node(s); rotSets=0 posSets=1608
+billboarded 0 of 8 live node(s); rotSets=0 posSets=1512
+```
+
+`SetPosition` **is** being called, heavily — the earlier `posSets=0` reading was taken before the method
+was ever reached. `SetQuaternionRotation` is still never called (`rotSets=0`), so it is not the writer and
+its Harmony patch can be deleted.
+
+The interesting part is the alternation: 8 of 8, then 0 of 8, roughly 4 ms apart, repeating. Something
+resets the billboard between our writes. That is the "rotations do not stick" bug, and it is now a matter
+of finding who clears it rather than of finding where we set it.
+
+---
+
 ## Gotchas hit so far
 
 1. **Only the *generic* `GameObject.AddComponent<T>()` is stripped — `AddComponent(Il2CppSystem.Type)`
