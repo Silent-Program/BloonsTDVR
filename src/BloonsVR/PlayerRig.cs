@@ -39,6 +39,9 @@ namespace BloonsVR
         private readonly System.Collections.Generic.List<Camera> _btdCameras =
             new System.Collections.Generic.List<Camera>();
 
+        private readonly System.Collections.Generic.Dictionary<Camera, Rect> _originalRects =
+            new System.Collections.Generic.Dictionary<Camera, Rect>();
+
         private Vector3 _playerPosition;
         private float _yaw;
         private float _pitch;
@@ -103,8 +106,73 @@ namespace BloonsVR
             if (reference != null)
                 _camera.cullingMask = reference.cullingMask;
 
+            CopyUrpRenderer(reference);
+
             SwitchOffBtdCameras(reference);
-            MelonLogger.Msg($"[BloonsVR] own camera created; {Describe(_camera)}");
+
+            // Diagnostic: Unity exposes a non-generic camera count. If it is larger than the number we
+            // disabled, something else in BTD6 is still rendering the world and our camera is only one of
+            // several contributors to the frame.
+            try
+            {
+                MelonLogger.Msg(
+                    $"[BloonsVR] cameras in scene: {Camera.allCamerasCount} " +
+                    $"(we disabled {_btdCameras.Count}); {Describe(_camera)}");
+            }
+            catch (System.Exception e)
+            {
+                MelonLogger.Warning($"[BloonsVR] camera count unavailable: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Give our camera the same URP renderer as BTD6's.
+        ///
+        /// This is the most likely reason a runtime-created camera renders nothing in a URP game: a camera
+        /// with no renderer data falls back to renderer index 0, and if BTD6's world is drawn by a different
+        /// index the camera has nothing to show. It only shows up at runtime, because the missing
+        /// <c>UniversalAdditionalCameraData</c> cannot be seen by decompiling.
+        /// </summary>
+        private void CopyUrpRenderer(Camera reference)
+        {
+            if (_camera == null)
+                return;
+
+            try
+            {
+                var ours = _cameraObject
+                    .AddComponent(Il2CppInterop.Runtime.Il2CppType
+                        .Of<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>())
+                    .TryCast<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+
+                if (ours == null)
+                {
+                    MelonLogger.Warning("[BloonsVR] could not attach UniversalAdditionalCameraData");
+                    return;
+                }
+
+                int rendererIndex = 0;
+                if (reference != null &&
+                    reference.TryGetComponent(
+                        out UnityEngine.Rendering.Universal.UniversalAdditionalCameraData theirs) &&
+                    theirs != null)
+                {
+                    rendererIndex = theirs.m_RendererIndex;
+                    ours.renderType = theirs.renderType;
+                }
+
+                ours.m_RendererIndex = rendererIndex;
+
+                MelonLogger.Msg(
+                    $"[BloonsVR] URP renderer index {rendererIndex}" +
+                    (reference == null ? " (no reference camera)" : " (copied from BTD6's camera)"));
+            }
+            catch (System.Exception e)
+            {
+                // GetComponent only exposes a generic overload here, which may itself be stripped. If it is,
+                // we fall back to renderer 0 and say so rather than pretending it matched.
+                MelonLogger.Warning($"[BloonsVR] URP camera data not copied ({e.GetType().Name}); using renderer 0");
+            }
         }
 
         private void SwitchOffBtdCameras(Camera extra)
@@ -198,12 +266,19 @@ namespace BloonsVR
 
             if (active)
             {
+                // Re-enable our camera and re-disable BTD6's. This used to be missing, so after a single V-off
+                // the rig stayed invisible forever and every later press of V looked like it did nothing.
+                if (_camera != null)
+                    _camera.enabled = true;
+
+                SwitchOffBtdCameras(null);
+                ApplyViewports();
                 LockCursor(true);
-                MelonLogger.Msg("[BloonsVR] first person ON - own camera, BTD6 cameras off");
+                MelonLogger.Msg("[BloonsVR] first person ON - our camera right half, BTD6 cameras off");
             }
             else
             {
-                // Hand the view back: our camera off, BTD6's back on.
+                // Hand the view back: our camera off, BTD6's back on and full-screen.
                 if (_camera != null)
                     _camera.enabled = false;
 
@@ -211,8 +286,13 @@ namespace BloonsVR
                 {
                     try
                     {
-                        if (camera != null)
-                            camera.enabled = true;
+                        if (camera == null)
+                            continue;
+
+                        camera.enabled = true;
+                        camera.rect = _originalRects.ContainsKey(camera)
+                            ? _originalRects[camera]
+                            : new Rect(0f, 0f, 1f, 1f);
                     }
                     catch (System.Exception)
                     {
@@ -220,9 +300,53 @@ namespace BloonsVR
                     }
                 }
 
-                MelonLogger.Msg("[BloonsVR] first person OFF - BTD6 camera restored");
+                _originalRects.Clear();
+
+                MelonLogger.Msg("[BloonsVR] first person OFF - BTD6 camera restored full-screen");
                 LockCursor(false);
             }
+        }
+
+        /// <summary>
+        /// Split the screen: BTD6 keeps the left half at its normal top-down framing, the first-person view
+        /// gets the right half.
+        ///
+        /// This is the practical version of "one window per camera". Unity's multi-window
+        /// <c>Display.Create</c> needs a "Support Multiple Windows" Player Setting baked into the executable
+        /// at build time, which a mod cannot turn on — and the generated wrapper does not even expose
+        /// <c>Create</c> or <c>windowOpen</c>. A viewport split needs no such setting.
+        ///
+        /// It is also the better diagnostic: if something else in BTD6 still owns the full frame, the right
+        /// half simply stays empty, which is obvious — instead of the whole view looking unchanged and
+        /// being mistaken for "nothing happened".
+        /// </summary>
+        private void ApplyViewports()
+        {
+            if (_camera == null)
+                return;
+
+            _camera.rect = new Rect(0.5f, 0f, 0.5f, 1f);
+
+            foreach (var camera in _btdCameras)
+            {
+                if (camera == null)
+                    continue;
+
+                try
+                {
+                    if (!_originalRects.ContainsKey(camera))
+                        _originalRects[camera] = camera.rect;
+
+                    camera.rect = new Rect(0f, 0f, 0.5f, 1f);
+                }
+                catch (System.Exception e)
+                {
+                    MelonLogger.Warning($"[BloonsVR] could not set viewport on {camera.name}: {e.Message}");
+                }
+            }
+
+            MelonLogger.Msg(
+                $"[BloonsVR] split {Screen.width}x{Screen.height}: BTD6 left half, first person right half");
         }
 
         /// <summary>Drop the player in, above the buildable part of the map.</summary>

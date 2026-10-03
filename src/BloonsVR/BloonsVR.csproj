@@ -65,6 +65,15 @@
       <HintPath>$(GameAssembliesDir)\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- URP: UniversalAdditionalCameraData, so our runtime camera uses the same renderer as BTD6's. -->
+    <Reference Include="Unity.RenderPipelines.Universal.Runtime">
+      <HintPath>$(GameAssembliesDir)\Unity.RenderPipelines.Universal.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.Core.Runtime">
+      <HintPath>$(GameAssembliesDir)\Unity.RenderPipelines.Core.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
       <HintPath>$(GameAssembliesDir)\UnityEngine.PhysicsModule.dll</HintPath>
       <Private>false</Private>
