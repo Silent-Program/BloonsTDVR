@@ -294,6 +294,69 @@ and the corrected tower list are all untested.
 
 ---
 
+## Input blocking — the recipe that actually works
+
+Written up from BindingOfBloons' field notes, which were tested in game on exactly this build
+(BTD6 56.3 / Unity 6000.0.58f2 / MelonLoader 0.7.3 / Mod Helper 3.6.8). Reproduced here as three layers.
+
+**Both Unity input backends are live at once.** Legacy `Input.GetKey` returns real states without
+throwing, *and* `Keyboard.current` is non-null with live keys. BTD6 reads through both. **A hit on one
+backend proves nothing** — BindingOfBloons logged `Input.GetKey(W) hidden from BTD6 (patch active)` and
+the hotkeys *still* fired. Only the symptom disappearing is evidence.
+
+### The design principle that makes it work
+
+The consumer must read the **raw device** (`Keyboard.current.wKey`, `InputSystem.devices`) — never legacy
+`GetKey`, never an `InputAction`. Then every layer below is transparent to it.
+
+**This forced a fix in our own code:** `InputReader` previously fell back to legacy `GetKey` as a last
+resort. Layer 1 prefixes those getters, so that fallback would have starved *us* — a self-inflicted
+wound. The legacy fallback is now gone; raw device only.
+
+### Layer 1 — legacy Harmony prefixes
+
+`GetKey` / `GetKeyDown` / `GetKeyUp`, `GetAxis` / `GetAxisRaw` (`Horizontal`/`Vertical` → 0), plus a
+log-only `GetButton` probe. **`new[] { typeof(KeyCode) }` is required** — `GetKey` is overloaded on
+`KeyCode` and `string` and Harmony cannot tell them apart without it. Registered in `OnApplicationStart`
+(`OnInitializeMelon` is sealed), with our own `Harmony` instance so failures are visible.
+
+### Layer 2 — the game's own named actions
+
+From `Il2Cpp.InputSystemController.instance.actionMap`:
+
+- `m_Player_Move`, `m_Player_Look` — the movement and look actions.
+- `m_UI_Point`, `m_UI_MiddleClick`, `m_UI_RightClick`, `m_UI_ScrollWheel` — the mouse consumers.
+  **`m_UI_Point` is the one that made the selected tower spin when the mouse moved**, which the player
+  spotted and reported. Left out on purpose: `m_UI_Submit` / `m_UI_Click` / `m_UI_Navigate`, because the
+  player needs those to click the shop once the cursor is released — and blocking is lifted entirely on Tab.
+
+### Layer 3 — scan every enabled action for a WASD binding
+
+`InputSystem.ListEnabledActions()`, disable anything whose `effectivePath`/`path` ends `/w`, `/a`, `/s`,
+`/d` under `<keyboard>`, re-asserted each frame because BTD6 re-enables its maps on input-mode changes.
+
+**IL2CPP gotcha:** `ListEnabledActions()` returns an **Il2Cpp list** — iterate with `var` and its own
+enumerator, never assign it to a `System.Collections.Generic.List`. (We also hold direct references to
+the named actions, which avoids the issue for those.)
+
+### Verifying it
+
+`MelonLoader\Latest.log` should show:
+
+```
+Layer 1: legacy UnityEngine.Input prefixes are live
+Layer 2: took N BTD6 action(s) (Move, Look + mouse UI)
+Layer 3: scanning N enabled action(s)
+Layer 3: <map>/<name> <-- DISABLED
+Layer 1 probe: BTD6 called Input.GetButton("...")      (only if it uses GetButton)
+```
+
+and every heartbeat carries `btdInput=blocked|LEAKED|not-attached|released`.
+**Falsifiable endpoint:** if the Layer 3 scan finds no WASD-bound actions *and* the symptom persists,
+BTD6 is reading the raw device directly and cannot be starved without also starving us.
+
+---
+
 ## Run log — 2026-10-03 15:53 (build 3DFDE836, the own-camera version)
 
 This is the run that produced "stuck in the main camera view, V just centres the cursor, WASD still maps

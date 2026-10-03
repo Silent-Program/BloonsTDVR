@@ -52,16 +52,22 @@ namespace BloonsVR
             base.OnEarlyInitialize();
             MelonLogger.Msg("[BloonsVR] loaded. V = first person, WASD = move, TAB = cursor, B = billboards, C = tower, F = place.");
             CursorButton.OnToggleRequested = () => _rig?.SetCursorLocked(!_rig.CursorLocked);
+        }
 
-            // BTD6 Mod Helper exposes OnUpdate() as its per-frame hook. It does NOT come from MelonLoader —
-            // MelonLoader 0.7's MelonMod only has the scene callbacks — the helper implements it with its
-            // own patch. That makes it a better driver than anything invented here: it is already proven by
-            // other BTD6 mods, and it is wired into the game's own tick.
+        /// <summary>
+        /// Register the Harmony patches here. <c>OnInitializeMelon</c> is sealed on <c>BloonsMod</c>, so
+        /// <c>OnApplicationStart</c> is the earliest hook we own, and it is what BindingOfBloons uses.
+        ///
+        /// BTD6 Mod Helper's own <c>ApplyHarmonyPatches</c> is deliberately not used: it swallows its own
+        /// exceptions and only logs them, so a failed patch would be invisible here.
+        /// </summary>
+        public override void OnApplicationStart()
+        {
+            base.OnApplicationStart();
+
             try
             {
-                new HarmonyLib.Harmony("com.bloonsvr")
-                    .PatchAll(typeof(BloonsVRMod).Assembly);
-
+                new HarmonyLib.Harmony("com.bloonsvr").PatchAll(typeof(BloonsVRMod).Assembly);
                 MelonLogger.Msg("[BloonsVR] Harmony patches applied.");
             }
             catch (System.Exception e)
@@ -72,6 +78,10 @@ namespace BloonsVR
 
         /// <summary>
         /// BTD6 Mod Helper's per-frame hook. One call per frame, on the main thread, inside the match.
+        ///
+        /// This is not a MelonLoader feature: MelonLoader 0.7's <c>MelonMod</c> has no per-frame callback
+        /// at all. BTD6 Mod Helper implements <c>OnUpdate</c> itself, which is why it is used here instead of
+        /// an invented driver.
         /// </summary>
         public override void OnUpdate()
         {

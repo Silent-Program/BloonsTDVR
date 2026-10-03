@@ -1,37 +1,43 @@
+using HarmonyLib;
 using MelonLoader;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace BloonsVR
 {
     /// <summary>
-    /// Takes BTD6's movement and look actions away from it while the first-person rig is active, and hands
-    /// them back on V.
+    /// Denies WASD and mouse-look to BTD6 while the rig is active, and gives them back afterwards.
     ///
-    /// The earlier version of this scanned <c>InputSystem.ListEnabledActions()</c> looking for bindings
-    /// containing <c>&lt;Keyboard&gt;/w</c> and disabled whatever it found. It did not work: BTD6 keeps its
-    /// input in its own <see cref="Il2Cpp.Btd6ActionMap"/> of named actions, and the WASD camera control
-    /// lives in <c>Move</c> while the mouse control lives in <c>Look</c>. Nothing binds those to a path the
-    /// scan was matching, so nothing was disabled and BTD6 kept panning and orbiting its camera at the same
-    /// time as the rig. Disabling the two actions by name is exact, and kills both bugs at once.
+    /// BTD6 runs **both** Unity input backends at once and reads different things through each: legacy
+    /// <c>Input.GetKey</c> returns real states without throwing, and
+    /// <c>Keyboard.current</c> is non-null with live keys. So hitting one backend proves nothing — the only
+    /// evidence that matters is the symptom going away. Three layers, all scoped to "the rig is active and
+    /// the cursor is locked", all restored on V / Tab / teardown:
     ///
-    /// Disabled: <c>Move</c> / <c>m_Player_Move</c> (WASD) and <c>Look</c> / <c>m_Player_Look</c> (mouse).
-    /// <c>Look</c> is the important one people forget — it is what makes BTD6 swing the camera around its
-    /// own pivot, which reads as the view "rotating around the unmodded pivot" whenever the rig is on.
+    ///   Layer 1 — Harmony prefixes on the legacy getters. The <c>new[] { typeof(KeyCode) }</c> is
+    ///             required to disambiguate from the string overload of GetKey.
+    ///   Layer 2 — the game's own named actions, <c>m_Player_Move</c> and <c>m_Player_Look</c>, plus the
+    ///             mouse-driven UI actions. <c>m_UI_Point</c> is the one that makes the selected tower spin
+    ///             when the mouse moves.
+    ///   Layer 3 — a scan of every enabled InputAction for a &lt;keyboard&gt;/w|a|s|d binding, re-asserted
+    ///             each frame because BTD6 re-enables its action maps on input-mode changes.
     ///
-    /// Re-asserted every frame, because BTD6 re-enables its action map when the input mode changes
-    /// (keyboard/gamepad/UI transitions). Our own movement polls <c>Keyboard.current</c> directly, so it is
-    /// unaffected by any of this.
+    /// Important: our own input must come from the **raw device** (<c>Keyboard.current</c> /
+    /// <c>InputSystem.devices</c>), never from legacy GetKey or from an InputAction, or Layer 1 would
+    /// starve the consumer as well. See <see cref="InputReader"/>.
     /// </summary>
     internal static class InputOverride
     {
         private static bool _blocking;
         private static bool _attached;
-        private static int _heldCount;
+        private static bool _scanned;
 
         private static readonly System.Collections.Generic.List<InputAction> Held =
             new System.Collections.Generic.List<InputAction>();
 
-        /// <summary>True while BTD6 is being denied Move and Look.</summary>
+        private static readonly System.Collections.Generic.HashSet<string> LegacyProbes =
+            new System.Collections.Generic.HashSet<string>();
+
         internal static bool Blocking => _blocking;
 
         internal static void SetBlocking(bool blocking)
@@ -68,7 +74,15 @@ namespace BloonsVR
                     MelonLogger.Warning($"[BloonsVR] could not re-disable a BTD6 action: {e.Message}");
                 }
             }
+
+            if (!_scanned)
+            {
+                ScanWasdActions();
+                _scanned = true;
+            }
         }
+
+        // ---------------------------------------------------------------- Layer 2
 
         private static void Attach()
         {
@@ -84,24 +98,24 @@ namespace BloonsVR
 
             var map = controller.actionMap;
 
-            // These are plain fields on Btd6ActionMap. The same actions are also reachable as
-            // map.Player.Move / map.Player.Look through the nested PlayerActions struct, but the fields are
-            // the direct route and hold stable references we can re-enable individually later.
             Take(map.m_Player_Move, "m_Player_Move");
             Take(map.m_Player_Look, "m_Player_Look");
 
+            // Mouse consumers. m_UI_Point is the one that rotates the selected tower under the cursor.
+            // Left out on purpose: m_UI_Submit / m_UI_Click / m_UI_Navigate, because the player needs those
+            // to click the shop once the cursor is released. Blocking is lifted entirely on Tab.
+            Take(map.m_UI_Point, "m_UI_Point");
+            Take(map.m_UI_MiddleClick, "m_UI_MiddleClick");
+            Take(map.m_UI_RightClick, "m_UI_RightClick");
+            Take(map.m_UI_ScrollWheel, "m_UI_ScrollWheel");
+
             _attached = true;
-            _heldCount = Held.Count;
-
-            if (_heldCount < 2)
-                MelonLogger.Warning($"[BloonsVR] only found {_heldCount} of the expected 2 player actions");
-
-            MelonLogger.Msg($"[BloonsVR] took {_heldCount} BTD6 player action(s) (Move + Look) for the rig");
+            MelonLogger.Msg($"[BloonsVR] Layer 2: took {Held.Count} BTD6 action(s) (Move, Look + mouse UI)");
         }
 
         private static void Take(InputAction action, string name)
         {
-            if (action == null || Held.Contains(action))
+            if (action == null)
                 return;
 
             try
@@ -117,17 +131,167 @@ namespace BloonsVR
             }
         }
 
+        // ---------------------------------------------------------------- Layer 3
+
         /// <summary>
-        /// Whether Move and Look are currently still disabled. Reported every heartbeat so a leak is
-        /// visible: if this ever reads <c>LEAKED</c>, BTD6 re-enabled its action map and is receiving WASD
-        /// and mouse look again, which is exactly the symptom of "WASD still maps to BTD6 controls".
+        /// Disable any enabled action bound to a keyboard W/A/S/D. Kept because the named-action route only
+        /// covers the actions we know about, and BTD6 re-binds maps when the input mode changes.
+        ///
+        /// IL2CPP gotcha: <c>ListEnabledActions()</c> returns an Il2Cpp list. Iterate it with <c>var</c> and
+        /// its own enumerator — never assign it to a <c>System.Collections.Generic.List</c>.
         /// </summary>
+        private static void ScanWasdActions()
+        {
+            try
+            {
+                var actions = InputSystem.ListEnabledActions();
+                if (actions == null)
+                {
+                    MelonLogger.Warning("[BloonsVR] ListEnabledActions returned null");
+                    return;
+                }
+
+                MelonLogger.Msg($"[BloonsVR] Layer 3: scanning {actions.Count} enabled action(s)");
+
+                int found = 0;
+                var enumerator = actions.GetEnumerator();
+                while (enumerator.MoveNext())
+                {
+                    var action = enumerator.Current;
+                    if (action == null || !BindsWasd(action))
+                        continue;
+
+                    string label;
+                    try
+                    {
+                        var mapName = action.actionMap != null ? action.actionMap.name : "?";
+                        label = $"{mapName}/{action.name}";
+                    }
+                    catch (System.Exception)
+                    {
+                        label = "?";
+                    }
+
+                    if (Held.Contains(action))
+                    {
+                        MelonLogger.Msg($"[BloonsVR] Layer 3: {label} <-- already held");
+                        continue;
+                    }
+
+                    try
+                    {
+                        action.Disable();
+                        Held.Add(action);
+                        found++;
+                        MelonLogger.Msg($"[BloonsVR] Layer 3: {label} <-- DISABLED");
+                    }
+                    catch (System.Exception e)
+                    {
+                        MelonLogger.Warning($"[BloonsVR] Layer 3: could not disable {label}: {e.Message}");
+                    }
+                }
+
+                MelonLogger.Msg($"[BloonsVR] Layer 3: {found} new WASD-bound action(s) disabled");
+            }
+            catch (System.Exception e)
+            {
+                MelonLogger.Warning($"[BloonsVR] Layer 3 scan failed: {e.Message}");
+            }
+        }
+
+        private static bool BindsWasd(InputAction action)
+        {
+            var bindings = action.bindings;
+            for (int i = 0; i < bindings.Count; i++)
+            {
+                string path;
+                try
+                {
+                    path = bindings[i].effectivePath;
+                    if (string.IsNullOrEmpty(path))
+                        path = bindings[i].path;
+                }
+                catch (System.Exception)
+                {
+                    continue;
+                }
+
+                if (IsWasd(path))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsWasd(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return false;
+
+            var p = path.ToLowerInvariant();
+            if (!p.StartsWith("<keyboard>"))
+                return false;
+
+            return p.EndsWith("/w") || p.EndsWith("/a") || p.EndsWith("/s") || p.EndsWith("/d");
+        }
+
+        // ---------------------------------------------------------------- shared
+
+        internal static bool SuppressKey(KeyCode key, ref bool result)
+        {
+            if (!_blocking)
+                return true;
+
+            // KeyCode.W = 87, A = 65, S = 83, D = 68.
+            int k = (int)key;
+            if (k != 87 && k != 65 && k != 83 && k != 68)
+                return true;
+
+            result = false;
+            LogLegacyOnce();
+            return false;
+        }
+
+        internal static bool SuppressAxis(string axisName, ref float result)
+        {
+            if (!_blocking)
+                return true;
+
+            if (axisName != "Horizontal" && axisName != "Vertical")
+                return true;
+
+            result = 0f;
+            LogLegacyOnce();
+            return false;
+        }
+
+        /// <summary>Log-only probe, so we can see whether BTD6 reads GetButton at all.</summary>
+        internal static void LogButtonProbe(string buttonName)
+        {
+            if (!_blocking || string.IsNullOrEmpty(buttonName))
+                return;
+
+            if (LegacyProbes.Add(buttonName))
+                MelonLogger.Msg($"[BloonsVR] Layer 1 probe: BTD6 called Input.GetButton(\"{buttonName}\")");
+        }
+
+        private static bool _legacyLogged;
+
+        private static void LogLegacyOnce()
+        {
+            if (_legacyLogged)
+                return;
+
+            _legacyLogged = true;
+            MelonLogger.Msg("[BloonsVR] Layer 1: legacy UnityEngine.Input prefixes are live");
+        }
+
         internal static string HoldState()
         {
             if (!_blocking)
                 return "released";
 
-            if (!_attached || Held.Count == 0)
+            if (!_attached)
                 return "not-attached";
 
             for (int i = 0; i < Held.Count; i++)
@@ -156,12 +320,60 @@ namespace BloonsVR
                 }
             }
 
-            if (_heldCount > 0)
-                MelonLogger.Msg($"[BloonsVR] released {_heldCount} BTD6 action(s) back to the game");
+            if (Held.Count > 0)
+                MelonLogger.Msg($"[BloonsVR] released {Held.Count} BTD6 action(s) back to the game");
 
             Held.Clear();
-            _heldCount = 0;
             _attached = false;
+            _scanned = false;
+            LegacyProbes.Clear();
         }
+    }
+
+    // --- Layer 1: legacy UnityEngine.Input --------------------------------------
+    // The explicit parameter list is required: GetKey is overloaded on (KeyCode) and (string), and
+    // without it Harmony cannot tell them apart.
+
+    [HarmonyPatch(typeof(Input), "GetKey", new[] { typeof(KeyCode) })]
+    internal static class BlockLegacyGetKey
+    {
+        private static bool Prefix(KeyCode key, ref bool __result)
+            => InputOverride.SuppressKey(key, ref __result);
+    }
+
+    [HarmonyPatch(typeof(Input), "GetKeyDown", new[] { typeof(KeyCode) })]
+    internal static class BlockLegacyGetKeyDown
+    {
+        private static bool Prefix(KeyCode key, ref bool __result)
+            => InputOverride.SuppressKey(key, ref __result);
+    }
+
+    [HarmonyPatch(typeof(Input), "GetKeyUp", new[] { typeof(KeyCode) })]
+    internal static class BlockLegacyGetKeyUp
+    {
+        private static bool Prefix(KeyCode key, ref bool __result)
+            => InputOverride.SuppressKey(key, ref __result);
+    }
+
+    [HarmonyPatch(typeof(Input), "GetAxis", new[] { typeof(string) })]
+    internal static class BlockLegacyGetAxis
+    {
+        private static bool Prefix(string axisName, ref float __result)
+            => InputOverride.SuppressAxis(axisName, ref __result);
+    }
+
+    [HarmonyPatch(typeof(Input), "GetAxisRaw", new[] { typeof(string) })]
+    internal static class BlockLegacyGetAxisRaw
+    {
+        private static bool Prefix(string axisName, ref float __result)
+            => InputOverride.SuppressAxis(axisName, ref __result);
+    }
+
+    /// <summary>Log only — we do not suppress, we just learn whether BTD6 uses GetButton.</summary>
+    [HarmonyPatch(typeof(Input), "GetButton", new[] { typeof(string) })]
+    internal static class ProbeLegacyGetButton
+    {
+        private static void Postfix(string buttonName)
+            => InputOverride.LogButtonProbe(buttonName);
     }
 }

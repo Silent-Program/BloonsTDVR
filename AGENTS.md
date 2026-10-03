@@ -157,21 +157,31 @@ transform), and `Camera.main` is sometimes null. Never assume they are the same 
   is released so clicking the shop does not swing the camera. `C` and `F` are ignored while released.
 ## Input
 
-- **Never poll `Keyboard.current` for gameplay keys.** It returned false for every movement key while
-  `Mouse.current` delivered fine, so the player could not walk. Read through `InputReader`, which asks
-  every keyboard in `InputSystem.devices`, then `Keyboard.current`, then legacy `UnityEngine.Input`.
-  The heartbeat prints `keys=[kb=N W0 A0 S0 D0]` — if the player cannot move, that is the line to read
-  first.
-- `InputOverride` disables **BTD6's own named actions** — `Btd6ActionMap.m_Player_Move` (WASD) and
-  `m_Player_Look` (mouse) — and re-asserts every frame, because BTD6 re-enables its action map on input
-  mode changes. Get them from `Il2Cpp.InputSystemController.instance.actionMap`. The `Look` action is the
-  one people forget: it is what makes BTD6 swing its camera around its own pivot while the rig is on.
-  Do **not** go back to scanning `InputSystem.ListEnabledActions()` for `<Keyboard>/w` bindings — that
-  approach was tried and silently matched nothing.
-- `Move`/`Look` also exist on the nested `Btd6ActionMap.PlayerActions` struct; the `m_Player_*` fields on
-  the outer class are the direct route and hold stable references.
-- The heartbeat reports `btdInput=blocked|LEAKED|not-attached|released`. **`LEAKED` means BTD6
-  re-enabled its action map and is taking WASD and mouse look again.**
+- **BTD6 runs both Unity input backends at once** and reads through each: legacy `Input.GetKey` returns
+  real states without throwing *and* `Keyboard.current` is non-null with live keys. **Hitting one backend
+  proves nothing** — BindingOfBloons logged `GetKey(W) hidden from BTD6 (patch active)` and hotkeys still
+  fired. Only the symptom disappearing is evidence.
+- **The consumer must read the raw device** (`InputSystem.devices` / `Keyboard.current`) — never legacy
+  `GetKey`, never an `InputAction`. `InputReader` follows this and has **no legacy fallback**, because
+  Layer 1 prefixes those exact getters and a legacy fallback would starve us as well as BTD6.
+- Never poll `Keyboard.current` alone either: it returned false for every movement key while
+  `Mouse.current` worked, so the player could not walk. Read through `InputReader`, which asks every
+  keyboard in `InputSystem.devices`. Heartbeat prints `keys=[kb=N W0 A0 S0 D0]` — read that first.
+- `InputOverride` is three layers, all scoped to "rig active and cursor locked":
+  1. **Legacy Harmony prefixes** on `GetKey`/`GetKeyDown`/`GetKeyUp`/`GetAxis`/`GetAxisRaw`, plus a
+     log-only `GetButton` probe. **`new[] { typeof(KeyCode) }` is mandatory** — `GetKey` is overloaded on
+     `KeyCode` and `string`.
+  2. **Named actions** from `Il2Cpp.InputSystemController.instance.actionMap`: `m_Player_Move`,
+     `m_Player_Look`, and the mouse consumers `m_UI_Point` (this is what spun the selected tower),
+     `m_UI_MiddleClick`, `m_UI_RightClick`, `m_UI_ScrollWheel`. Deliberately **not** `m_UI_Submit` /
+     `m_UI_Click` / `m_UI_Navigate` — the player needs those to click the shop.
+  3. **A scan** of `InputSystem.ListEnabledActions()` for `<keyboard>/w|a|s|d` bindings, re-asserted each
+     frame. That call returns an **Il2Cpp list**: iterate with `var`, never assign to a
+     `System.Collections.Generic.List`.
+- Harmony patches register in `OnApplicationStart` — `OnInitializeMelon` is sealed on `BloonsMod`. Use
+  your own `Harmony` instance; BTD6 Mod Helper's `ApplyHarmonyPatches` swallows its own exceptions.
+- Heartbeat reports `btdInput=blocked|LEAKED|not-attached|released`. **`LEAKED` means BTD6 re-enabled its
+  action map and is taking WASD and mouse look again.**
 
 ## Sprites
 

@@ -12,14 +12,15 @@ namespace BloonsVR
     /// necessarily the one carrying the events (BTD6 ships gesture/virtual-input plumbing and can change
     /// input mode mid-match).
     ///
-    /// So: ask <em>every</em> keyboard device, not just <c>Keyboard.current</c>, and fall back to the legacy
-    /// <c>UnityEngine.Input</c> getters in case gameplay keys are only visible there. Which path is
-    /// actually live is reported in the heartbeat log, so this stops being guesswork.
+    /// So: ask <em>every</em> keyboard device, not just <c>Keyboard.current</c>.
+    ///
+    /// Deliberately does <b>not</b> fall back to legacy <c>UnityEngine.Input</c>. Layer 1 of
+    /// <see cref="InputOverride"/> prefixes those getters to deny BTD6 the movement keys, and a consumer
+    /// reading the same getters would starve itself. Raw device only — that is the whole point of the
+    /// split: BTD6 gets the lie, we get the truth.
     /// </summary>
     internal static class InputReader
     {
-        private static bool _legacyBroken;
-        private static bool _legacyLogged;
 
         /// <summary>True when the key is held on any keyboard we can see.</summary>
         internal static bool Held(Key key)
@@ -48,16 +49,15 @@ namespace BloonsVR
             {
                 try
                 {
-                    if (current[key].isPressed)
-                        return true;
+                    return current[key].isPressed;
                 }
                 catch (System.Exception)
                 {
-                    // Fall through to legacy.
+                    return false;
                 }
             }
 
-            return LegacyHeld(key);
+            return false;
         }
 
         /// <summary>True on the frame the key went down, on any keyboard.</summary>
@@ -97,39 +97,6 @@ namespace BloonsVR
             return false;
         }
 
-        private static bool LegacyHeld(Key key)
-        {
-            try
-            {
-                switch (key)
-                {
-                    case Key.W: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.W);
-                    case Key.A: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.A);
-                    case Key.S: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.S);
-                    case Key.D: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.D);
-                    case Key.Q: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.Q);
-                    case Key.E: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.E);
-                    case Key.C: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.C);
-                    case Key.F: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.F);
-                    case Key.B: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.B);
-                    case Key.V: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.V);
-                    case Key.Tab: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.Tab);
-                    case Key.LeftShift: return UnityEngine.Input.GetKey(UnityEngine.KeyCode.LeftShift);
-                    default: return false;
-                }
-            }
-            catch (System.Exception e)
-            {
-                if (!_legacyBroken)
-                {
-                    _legacyBroken = true;
-                    MelonLogger.Warning($"[BloonsVR] legacy Input unusable: {e.GetType().Name}");
-                }
-
-                return false;
-            }
-        }
-
         /// <summary>Compact key state, for the heartbeat. Makes a dead input obvious in one line.</summary>
         internal static string Describe()
         {
@@ -155,11 +122,7 @@ namespace BloonsVR
 
         internal static void LogLegacyStatus()
         {
-            if (_legacyLogged || !_legacyBroken)
-                return;
-
-            _legacyLogged = true;
-            MelonLogger.Msg("[BloonsVR] input is coming from the Input System only; legacy path is dead here");
+            // Nothing to report any more: the legacy path is intentionally unused.
         }
     }
 }
