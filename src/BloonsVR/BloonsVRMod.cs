@@ -243,7 +243,9 @@ namespace BloonsVR
                 $"[BloonsVR] tick {_framesRun}: player={_rig?.PlayerPosition} " +
                 $"yaw={_rig?.Yaw:F0} pitch={_rig?.Pitch:F0} camPos={_rig?.RigCamera?.transform.position} " +
                 $"aim={(_placer != null && _placer.HasAim ? _placer.AimPoint.ToString() : "none")} " +
-                $"cash={(model == null ? -1f : model.cash)} billboards={SpriteBillboard.Billboarded} rotSets={SpriteBillboard.RotationSets} rig={(_rig == null ? "no" : _rig.IsActive.ToString())}");
+                $"cash={(model == null ? -1f : model.cash)} billboards={SpriteBillboard.Billboarded} " +
+                $"rotSets={SpriteBillboard.RotationSets} rig={(_rig == null ? "no" : _rig.IsActive.ToString())} " +
+                $"btdInput={InputOverride.HoldState()} keys=[{InputReader.Describe()}]");
         }
 
         /// <summary>Everything unknown about the runtime, dumped once so one run answers all of it.</summary>

@@ -54,13 +54,14 @@ namespace BloonsVR
         /// <summary>Runs once per frame. Handles the rig toggle, the aim ray and placement.</summary>
         public void Tick()
         {
-            var keyboard = Keyboard.current;
-            if (keyboard == null || _rig == null)
+            if (_rig == null)
                 return;
 
-            // The toggle has to be read before the IsActive check, otherwise turning first person off
+            // InputReader rather than Keyboard.current: see its comment for why the latter was returning
+            // false for every key while mouse look worked.
+            // The toggles have to be read before the IsActive check, otherwise turning first person off
             // would leave nothing able to turn it back on.
-            if (keyboard[Hotkeys.ToggleRig].wasPressedThisFrame)
+            if (InputReader.PressedThisFrame(Hotkeys.ToggleRig))
             {
                 var turningOff = _rig.IsActive;
                 _rig.SetActive(!_rig.IsActive);
@@ -69,15 +70,18 @@ namespace BloonsVR
                 return;
             }
 
-            if (keyboard[Hotkeys.CursorToggle].wasPressedThisFrame)
+            if (InputReader.PressedThisFrame(Hotkeys.CursorToggle) && _rig.CursorLocked)
             {
                 // Hand the cursor back without leaving first person, so the shop/upgrade menus stay
                 // clickable. C and F are ignored in that state so they cannot fire through BTD6's UI.
-                if (_rig.CursorLocked)
-                {
-                    _rig.SetCursorLocked(false);
-                    return;
-                }
+                _rig.SetCursorLocked(false);
+                return;
+            }
+
+            if (InputReader.PressedThisFrame(Hotkeys.ToggleBillboards))
+            {
+                SpriteBillboard.Toggle();
+                return;
             }
 
             if (!_rig.IsActive || _rig.RigCamera == null)
@@ -88,12 +92,6 @@ namespace BloonsVR
 
             EnsureTowerList();
 
-            if (keyboard[Hotkeys.ToggleBillboards].wasPressedThisFrame)
-            {
-                SpriteBillboard.Toggle();
-                return;
-            }
-
             if (!_rig.CursorLocked)
             {
                 // Cursor is free for clicking BTD6's menus. Keep aiming for the readout, but never place.
@@ -103,10 +101,10 @@ namespace BloonsVR
 
             UpdateAim();
 
-            if (keyboard[Hotkeys.CycleTower].wasPressedThisFrame)
+            if (InputReader.PressedThisFrame(Hotkeys.CycleTower))
                 CycleTower();
 
-            if (keyboard[Hotkeys.PlaceTower].wasPressedThisFrame)
+            if (InputReader.PressedThisFrame(Hotkeys.PlaceTower))
                 Place();
         }
 

@@ -155,6 +155,13 @@ transform), and `Camera.main` is sometimes null. Never assume they are the same 
   without ever releasing the cursor first.
 - **TAB** releases/re-grabs the cursor without leaving first person; mouse look is suppressed while it
   is released so clicking the shop does not swing the camera. `C` and `F` are ignored while released.
+## Input
+
+- **Never poll `Keyboard.current` for gameplay keys.** It returned false for every movement key while
+  `Mouse.current` delivered fine, so the player could not walk. Read through `InputReader`, which asks
+  every keyboard in `InputSystem.devices`, then `Keyboard.current`, then legacy `UnityEngine.Input`.
+  The heartbeat prints `keys=[kb=N W0 A0 S0 D0]` — if the player cannot move, that is the line to read
+  first.
 - `InputOverride` disables **BTD6's own named actions** — `Btd6ActionMap.m_Player_Move` (WASD) and
   `m_Player_Look` (mouse) — and re-asserts every frame, because BTD6 re-enables its action map on input
   mode changes. Get them from `Il2Cpp.InputSystemController.instance.actionMap`. The `Look` action is the
@@ -163,6 +170,8 @@ transform), and `Camera.main` is sometimes null. Never assume they are the same 
   approach was tried and silently matched nothing.
 - `Move`/`Look` also exist on the nested `Btd6ActionMap.PlayerActions` struct; the `m_Player_*` fields on
   the outer class are the direct route and hold stable references.
+- The heartbeat reports `btdInput=blocked|LEAKED|not-attached|released`. **`LEAKED` means BTD6
+  re-enabled its action map and is taking WASD and mouse look again.**
 
 ## Sprites
 
@@ -177,6 +186,12 @@ Two things to know:
   on the ground (map walls, range circles, track arrows) will stand up on its side. `ShouldBillboard`
   in `SpriteBillboard.cs` is the single opt-out point; add exclusions there rather than filtering at
   the call site.
+
+**The rotations do not stick**, because BTD6 rewrites display transforms later in the frame. Do not add
+more Harmony hooks to `UnityDisplayNode` hoping to catch the ordering: `SetQuaternionRotation` **and**
+`SetPosition` both log `rotSets=0 posSets=0`, so neither is the writer — it happens somewhere else
+entirely. Start from `Assets.Scripts.Simulation.Display.DisplayNode` / `IDisplayNode` (the sim→display
+bridge) or `Assets.Scripts.Unity.Display.Scene`, which owns the `Factory` and a per-frame `position`.
 
 ## VR (phase 2, not started)
 

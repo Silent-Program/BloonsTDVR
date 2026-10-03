@@ -294,7 +294,59 @@ and the corrected tower list are all untested.
 
 ---
 
-## Run log — what the logs actually proved (2026-10-03 15:41 session)
+## Run log — 2026-10-03 15:53 (build 3DFDE836, the own-camera version)
+
+This is the run that produced "stuck in the main camera view, V just centres the cursor, WASD still maps
+to BTD6". The log explains all three, and none of them is what they look like.
+
+**The own-camera change worked:**
+```
+[BloonsVR] disabled BTD6 camera Scene
+[BloonsVR] own camera created; name=BloonsVR_Camera ... ortho=False fov=70 depth=100
+[BloonsVR] diag sceneCamera ... enabled=False
+```
+So the mod genuinely renders through its own camera. The "main camera view" the player is seeing *is*
+the rig's camera — it simply starts at the spawn point looking down 20 degrees, which looks much like
+BTD6's own top-down view.
+
+**The real bug: the player never moves.**
+```
+tick  60: player=(0.00, 0.00, -18.00) yaw=2  pitch=10 aim=(0.37, 0.00, -8.77)
+tick 240: player=(0.00, 0.00, -18.00) yaw=51 pitch=10 aim=(7.26, 0.00, -12.13)
+tick 300: player=(0.00, 0.00, -18.00) yaw=107 pitch=4 aim=(21.74, 0.00, -24.75)
+tick 720: player=(0.00, 0.00, -18.00) yaw=12 pitch=29 aim=none
+```
+X and Z never change across 720 frames while yaw and the aim ray move freely. Two conclusions:
+
+1. **Mouse look works and our camera works** — the aim ray tracks yaw through our own camera.
+2. **WASD produces zero movement.** `Keyboard.current.wKey.isPressed` was false for every movement key
+   while `Mouse.current.delta` delivered fine. Same device family, so this is not "the Input System is
+   dead"; it means the keyboard we were polling is not necessarily the one carrying gameplay key events
+   (BTD6 has gesture/virtual-input plumbing and switches input mode mid-match).
+
+Everything the player described follows from this: you cannot walk, so you cannot tell that the view is
+yours; pressing V swaps to BTD6's orthographic camera, which looks similar enough to read as "no change",
+leaving only the cursor behaviour to notice.
+
+**Fix: `InputReader`.** Reads every keyboard device in `InputSystem.devices` rather than only
+`Keyboard.current`, falls back to `Keyboard.current`, then to legacy `UnityEngine.Input`, and reports
+which path is live. Movement and all hotkeys now go through it.
+
+**Sprite billboarding: both Harmony hooks are dead.**
+```
+billboarded 8 of 8 live node(s); rotSets=0 posSets=0
+```
+Neither `SetQuaternionRotation` nor `SetPosition` is ever called, yet the sweep writes `8 of 8` nodes.
+BTD6 writes display transforms through some other path entirely. Do not add more hooks to
+`UnityDisplayNode`; find the writer first.
+
+**Input override attached cleanly:** `took 2 BTD6 player action(s) (Move + Look) for the rig`, and the
+new `InputOverride.HoldState()` heartbeat will report `blocked` / `LEAKED` / `not-attached` so a re-enable
+by BTD6 becomes visible instead of inferred from the player's impression.
+
+---
+
+## Run log — 2026-10-03 15:41 (build 2D95A4A1)
 
 This matters because two of the "fixes" before it *were* taking effect and the problem was elsewhere.
 

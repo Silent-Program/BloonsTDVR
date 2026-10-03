@@ -117,6 +117,29 @@ namespace BloonsVR
             }
         }
 
+        /// <summary>
+        /// Whether Move and Look are currently still disabled. Reported every heartbeat so a leak is
+        /// visible: if this ever reads <c>LEAKED</c>, BTD6 re-enabled its action map and is receiving WASD
+        /// and mouse look again, which is exactly the symptom of "WASD still maps to BTD6 controls".
+        /// </summary>
+        internal static string HoldState()
+        {
+            if (!_blocking)
+                return "released";
+
+            if (!_attached || Held.Count == 0)
+                return "not-attached";
+
+            for (int i = 0; i < Held.Count; i++)
+            {
+                var action = Held[i];
+                if (action != null && action.enabled)
+                    return "LEAKED";
+            }
+
+            return "blocked";
+        }
+
         private static void Release()
         {
             for (int i = 0; i < Held.Count; i++)

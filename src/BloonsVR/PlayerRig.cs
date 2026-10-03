@@ -2,6 +2,7 @@ using Il2CppAssets.Scripts.Unity.UI_New.InGame;
 using MelonLoader;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using static UnityEngine.InputSystem.Key;
 
 namespace BloonsVR
 {
@@ -242,10 +243,6 @@ namespace BloonsVR
             if (_camera == null)
                 ResolveCamera();
 
-            var keyboard = Keyboard.current;
-            if (keyboard == null)
-                return;
-
             if (!_spawned)
                 Teleport(BloonsVRMod.SpawnPoint, 0f);
 
@@ -261,20 +258,22 @@ namespace BloonsVR
             }
 
             // --- Move ------------------------------------------------------------
+            // InputReader, not Keyboard.current: see its comment for why that was returning false for
+            // every movement key while mouse look worked fine.
             float strafe = 0f, forward = 0f, lift = 0f;
-            if (keyboard.wKey.isPressed) forward += 1f;
-            if (keyboard.sKey.isPressed) forward -= 1f;
-            if (keyboard.dKey.isPressed) strafe += 1f;
-            if (keyboard.aKey.isPressed) strafe -= 1f;
-            if (keyboard[Hotkeys.Up].isPressed) lift += 1f;
-            if (keyboard[Hotkeys.Down].isPressed) lift -= 1f;
+            if (InputReader.Held(Key.W)) forward += 1f;
+            if (InputReader.Held(Key.S)) forward -= 1f;
+            if (InputReader.Held(Key.D)) strafe += 1f;
+            if (InputReader.Held(Key.A)) strafe -= 1f;
+            if (InputReader.Held(Hotkeys.Up)) lift += 1f;
+            if (InputReader.Held(Hotkeys.Down)) lift -= 1f;
 
             var rotation = Quaternion.Euler(0f, _yaw, 0f);
             var move = rotation * Vector3.forward * forward + rotation * Vector3.right * strafe;
             if (move.sqrMagnitude > 1f)
                 move.Normalize();
 
-            float speed = keyboard.leftShiftKey.isPressed ? SprintSpeed : WalkSpeed;
+            float speed = InputReader.Held(Key.LeftShift) ? SprintSpeed : WalkSpeed;
             var position = _playerPosition + move * (speed * Time.deltaTime);
 
             // Snap to the ground unless the player is deliberately flying up or down.
