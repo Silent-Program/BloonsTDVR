@@ -17,6 +17,8 @@ already paid for, and the open questions. This file is the short version.
   - `InputReader.cs` — raw-device key reads. The only place our input comes from.
   - `SpriteBillboard.cs` — makes 2D sprites face the player (`B` to toggle). **Does not stick yet.**
   - `DisplayRotationPatch.cs` — Harmony hooks probing how BTD6 writes display transforms.
+  - `RenderProbe.cs` — Harmony postfix on `UniversalRenderPipeline.Render`; reports which cameras Unity is
+    actually asked to draw. The first thing to read when the view is wrong.
   - `CursorButton.cs` — uGUI overlay that releases the cursor for BTD6's menus.
   - `PixelFont.cs` — 5x7 bitmap font rendered into a `Texture2D`; no runtime font exists.
   - `Btd6Map.cs` — defensive helpers over `GameModel` / `MapModel.areas` / `AreaModel`.
@@ -148,11 +150,36 @@ every frame, which is what produced "stuck above the map" and "rotating around t
 
 Instead: `new GameObject("BloonsVR_Camera")` at the scene root with **no parent**, plus
 `AddComponent(Il2CppType.Of<Camera>())`. Copy `cullingMask` off BTD6's camera, force
-`orthographic=false` / FOV 70 / near 0.05 / `depth=100`, and switch BTD6's cameras **off** while the rig
-is on, back **on** when it is off. Nothing in the game can touch our transform.
+`orthographic=false` / FOV 70 / near 0.05 / `depth=100`, and attach `UniversalAdditionalCameraData` with
+`m_RendererIndex` and `renderType` copied off BTD6's camera. Nothing in the game can touch our transform.
 
 `Camera.main` and `InGame.sceneCamera` are **different objects** in a match (different tags, same
 transform), and `Camera.main` is sometimes null. Never assume they are the same thing.
+
+**Cameras cannot be enumerated here.** `UnityEngine.Camera` exposes only the non-generic
+`allCamerasCount` / `GetAllCamerasCount()`; there is no `GetAllCameras(Camera[])` in the generated wrapper
+and `FindObjectsOfType<T>` / `Resources.FindObjectsOfTypeAll<T>` are stripped generics. A camera can only
+be *found* via `Camera.main` or `InGame.instance.sceneCamera`, never listed.
+
+### Do not disable BTD6's cameras. Use `Camera.rect` viewports
+
+Disabling BTD6's camera was tried twice and failed both times. What you get is not an error — it is a
+**frozen picture while the simulation keeps running**, because the back buffer retains the last frame
+Unity actually drew. `allCamerasCount = 1` (just ours) alongside an unchanged on-screen view is the
+signature. `URP renderer index -1` is *not* the bug: `-1` is URP's "use the pipeline default" sentinel.
+
+So both cameras render, and `ApplyViewports()` runs **every frame**, idempotently, setting
+`camera.rect` on `Camera.main` and `InGame.sceneCamera`. BTD6 keeps the left half at its normal top-down
+framing; first person gets the right half. Per-frame is not paranoia: BTD6 creates its real match camera
+*after* the rig is built, so any one-shot capture misses it. Earlier `SwitchOffBtdCameras(null)` also
+began with `_btdCameras.Clear()`, so a null argument silently emptied the list the viewport code iterated.
+
+**Rule: hook the render loop before theorising.** `RenderProbe.cs` is a Harmony postfix on
+`UnityEngine.Rendering.Universal.UniversalRenderPipeline.Render`, logging which cameras Unity is actually
+asked to draw. BTD6 uses the stock pipeline — no subclass of `UniversalRenderPipeline` or `RenderPipeline`
+exists anywhere in `Assembly-CSharp` — so that list is the real one. One line settles what three rounds of
+reasoning did not: is our camera **absent** (the pipeline skips it — camera setup problem) or **present**
+(it renders — the problem is what it draws)?
 
 ## UI and input
 

@@ -149,6 +149,9 @@ namespace BloonsVR
                 _rig.Tick();
                 _placer.Tick();
 
+                // Keep the render probe quiet unless there is a split to explain.
+                RenderProbe.Active = _rig.IsActive;
+
                 // Only steal WASD from BTD6 while we are actually the ones using it.
                 InputOverride.SetBlocking(_rig.IsActive && _rig.CursorLocked);
                 InputOverride.Tick();
@@ -249,13 +252,28 @@ namespace BloonsVR
         private static void Heartbeat()
         {
             var model = Btd6Map.Model;
+
+            // Unity exposes only a non-generic allCamerasCount here, so this is the sole way to see
+            // cameras come and go. It has to be sampled over time: BTD6's real match camera appears after
+            // the rig is built, which is why a single reading at spawn is misleading.
+            string cams;
+
+            try
+            {
+                cams = Camera.allCamerasCount.ToString();
+            }
+            catch (System.Exception)
+            {
+                cams = "?";
+            }
+
             MelonLogger.Msg(
                 $"[BloonsVR] tick {_framesRun}: player={_rig?.PlayerPosition} " +
                 $"yaw={_rig?.Yaw:F0} pitch={_rig?.Pitch:F0} camPos={_rig?.RigCamera?.transform.position} " +
                 $"aim={(_placer != null && _placer.HasAim ? _placer.AimPoint.ToString() : "none")} " +
                 $"cash={(model == null ? -1f : model.cash)} billboards={SpriteBillboard.Billboarded} " +
                 $"rotSets={SpriteBillboard.RotationSets} rig={(_rig == null ? "no" : _rig.IsActive.ToString())} " +
-                $"btdInput={InputOverride.HoldState()} keys=[{InputReader.Describe()}]");
+                $"cams={cams} btdInput={InputOverride.HoldState()} keys=[{InputReader.Describe()}]");
         }
 
         /// <summary>Everything unknown about the runtime, dumped once so one run answers all of it.</summary>

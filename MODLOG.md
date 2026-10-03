@@ -163,11 +163,92 @@ and `Update()` / `UpdateSimulation()`.
 The existence of `HitTestWorld` returning a `RaycastHit` means **the map does have Unity colliders**,
 which is why `TowerPlacer` uses `Physics.Raycast` first and only falls back to a horizontal plane.
 
-The rig **borrows** `sceneCamera`: it sets `orthographic = false`, `fieldOfView = 70`,
-`nearClipPlane = 0.05`, `farClipPlane = 5000`, then writes `transform.position` /
-`transform.rotation` every frame from the `InGame.Update` postfix. All of those are restored on exit
-(`V`). A postfix is the last thing that runs in `InGame.Update`, so the pose we write should be the one
-that renders — and `WatchForCameraClash()` logs a one-time warning if something writes it after us.
+The rig **owns its camera**: `new GameObject("BloonsVR_Camera")` at the scene root with no parent,
+`AddComponent(Il2CppType.Of<Camera>())`, `orthographic = false`, FOV 70, near 0.05, far 5000, depth 100,
+`cullingMask` copied off BTD6's camera, plus a `UniversalAdditionalCameraData` component with
+`m_RendererIndex` and `renderType` copied off BTD6's camera.
+
+Borrowing `sceneCamera` was tried first and is unwinnable — see the run logs below. BTD6 rewrites its own
+camera transform every frame, pinning it back to `pos=(0,0,0) rot=(60,0,0)` immediately after our write.
+
+**Do not disable BTD6's camera.** That was tried twice and failed both times. What is left enabled is a
+frame in which nothing draws, and the symptom is not an error — it is a frozen picture. See
+`Render log - 2026-10-03 16:30`.
+
+Instead both cameras render and `Camera.rect` viewports split the screen: BTD6 left half at its normal
+top-down framing, first person right half.
+
+### Cameras cannot be enumerated
+
+`UnityEngine.Camera` exposes only the non-generic `allCamerasCount` / `GetAllCamerasCount()` here. There is
+no `GetAllCameras(Camera[])` in the generated wrapper, and `FindObjectsOfType<T>` / `Resources
+.FindObjectsOfTypeAll<T>` are stripped generics. So a runtime-created camera can only be *found* through
+`Camera.main` (tag-based, and sometimes null) or `InGame.instance.sceneCamera` — never enumerated. That is
+the whole reason the viewport split is reapplied every frame instead of captured once: BTD6 creates its
+real match camera after the rig is built, and a camera that appears later would otherwise keep the full
+screen.
+
+---
+
+## Render log - 2026-10-03 16:30 (build C6CEF62E, disabling BTD6's camera)
+
+Reported in game: *"there is only the main camera, pressing v just pauses the screen while simulation goes
+on in the background"*. Log:
+
+```
+URP renderer index -1 (copied from BTD6's camera)
+disabled BTD6 camera Scene
+cameras in scene: 1 (we disabled 1); name=BloonsVR_Camera ... enabled=True active=True
+first person OFF - BTD6 camera restored full-screen
+split 2560x1600: BTD6 left half, first person right half
+first person ON - our camera right half, BTD6 cameras off
+```
+
+Three conclusions, and one of them corrects an earlier guess.
+
+1. **`URP renderer index -1` was not the bug.** `-1` is URP's "take the pipeline default" sentinel, so
+   copying it off BTD6's camera was correct. This was a plausible-sounding hypothesis with no evidence
+   behind it; only the log settled it.
+2. **`cameras in scene: 1` while BTD6's view was still on screen** means our camera was enabled, active,
+   and drawing nothing. The back buffer keeps the last image Unity rendered, so the picture froze while the
+   simulation ran on. "Screen pauses, sim continues" is the signature of *a frame with no camera drawing in
+   it*, not of a paused game.
+3. **The viewport split never appeared, and that is the more damning clue.** `camera.rect` is plain
+   `Camera` API, present in the wrapper, set on the only other camera in the scene — and nothing happened.
+   So either the rect was never applied (the capture list could be empty when `Camera.main` and
+   `sceneCamera` are both stale) or the frame is not being presented by that camera. Both are now
+   distinguished by observation instead of inference.
+
+### What was wrong in my own code
+
+`SetActive(true)` never re-enabled our camera and never re-disabled BTD6's. The first `V`-off set
+`_camera.enabled = false` and re-enabled BTD6's, and *nothing undid either* — so every later press of `V`
+did nothing observable. That is why an earlier run reported "V just puts my cursor in the centre": the view
+swap had genuinely never happened a second time.
+
+`SwitchOffBtdCameras(null)` also began with `_btdCameras.Clear()`, so passing a null reference from the
+`SetActive` path could empty the very list the viewport code then iterated.
+
+### The fix, and the probe that will actually settle it
+
+Both cameras now render; `ApplyViewports()` runs every frame and is idempotent, setting `rect` on
+`Camera.main` and `InGame.sceneCamera` each time rather than working from a captured list.
+
+`RenderProbe.cs` is a Harmony postfix on `UnityEngine.Rendering.Universal.UniversalRenderPipeline.Render`
+— the last point before the pipeline decides what to draw. BTD6 uses the stock pipeline: there is no
+subclass of `UniversalRenderPipeline` or `RenderPipeline` anywhere in `Assembly-CSharp`, so this sees the
+real camera list. It logs once a second, while the rig is on:
+
+```
+[BloonsVR] URP rendering 2 camera(s): [Scene rect=0.00,0.00 0.50x1.00 mask=... | BloonsVR_Camera rect=0.50,0.00 0.50x1.00 mask=...]
+```
+
+That single line separates the two remaining possibilities. Ours **absent** from the list means the
+pipeline is skipping us and the problem is camera setup; ours **present** means it renders and the problem
+is what it is drawing (layers, renderer index, drawing off-screen).
+
+Three separate hypotheses were reasoned into this code and none of them were verified, because nothing in
+the mod ever asked the engine what it was rendering. Always hook the render loop first.
 
 ---
 
@@ -566,25 +647,23 @@ DX11-only native VR layer.
 
 ## Open questions / next steps
 
-1. **Re-run and confirm the log.** Expected sequence, in order:
-   - `[BloonsVR] loaded. V = first person, WASD = move, C = tower, F = place.`
-   - `[BloonsVR] Harmony patch on InGame.Update applied.` (if absent, see below)
-   - `[BloonsVR] rig ready, spawned at ..., harmony=True`
-   - `[BloonsVR] N placeable towers indexed.`
-   If the postfix does not actually fire, the log says
-   `InGame.Update postfix did not fire; switching to the managed-coroutine driver` and the coroutine
-   takes over. Either path is fine; **both must never run at once** or movement would be applied twice.
-2. **No more error spam.** `Tick` logs a failure once and then tears the rig down. If errors reappear,
-   read the *first* one only.
-3. Confirm `Keyboard.current` / `Mouse.current` are non-null (new Input System assumption, gotcha 7).
-   If they are null, no movement will happen at all and the log will be otherwise clean.
-4. Does the camera actually turn? If `WatchForCameraClash` warns, BTD6 is writing `sceneCamera` after
-   our postfix. Fallback options: patch the writer's method with a `Prefix` returning false, or move the
-   write into `InGame.UpdateSimulation()` and check ordering relative to `InGame.Update()`.
-5. Check that `CreateTower` refuses track/water. If it does not, we need footprint validation
-   (`TowerModel.footprint` / `MapModel.blockers`) before calling it.
-6. Re-verify the tower list: walking `GameModel`'s explicit `IEnumerable<TowerModel>` at runtime may
-   include hero forms and internal towers beyond the `tier == 0` / `isParagon` filters.
+1. **Read `URP rendering N camera(s):` from the next run. That is the whole ball game.** If our camera is
+   not in the list, the pipeline is skipping it and the fix is camera setup. If it is in the list, the
+   camera renders and the problem is what it draws. Every previous attempt at this bug was guesswork
+   because nothing asked the engine what it was rendering; do not guess again, read the line.
+2. `cams=N` in the heartbeat, sampled every second. BTD6's real match camera appears after the rig is
+   built, so a single reading at spawn is misleading — the watch is for the count changing.
+3. Confirm the split appears: left half normal top-down, right half first person. If the right half is
+   uniformly the clear colour, our camera renders an empty scene — a `cullingMask` or layer problem, and
+   the mask is logged alongside each camera name.
+4. Confirm WASD moves the player: `keys=[kb=N W1 A0 S0 D0]` and a changing `player=` in the heartbeat.
+   `btdInput=LEAKED` means BTD6 re-enabled its action map and is taking input again.
+5. Sprite billboarding still does not stick. `rotSets=0 posSets=0` proves neither `SetQuaternionRotation`
+   nor `SetPosition` is the writer. Start from `Assets.Scripts.Simulation.Display.DisplayNode` /
+   `IDisplayNode`, or `Assets.Scripts.Unity.Display.Scene` which owns the `Factory` and a per-frame
+   `position`.
+6. Check that `CreateTower` refuses track/water. If it does not, footprint validation
+   (`TowerModel.footprint` / `MapModel.blockers`) is needed before calling it.
 7. **No HUD is possible via IMGUI.** Controller menus must be built from BTD6's own UI (the Mod Helper's
-   `ModHelper*` components are built that way) or from world-space meshes.
+   `ModHelper*` components) or from world-space meshes.
 8. Then: controller poses, then VR rendering.
