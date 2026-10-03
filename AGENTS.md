@@ -9,13 +9,20 @@ already paid for, and the open questions. This file is the short version.
 ## Layout
 
 - `src/BloonsVR/` — the mod:
-  - `BloonsVRMod.cs` — entry point + per-frame orchestrator (no GameObjects).
-  - `RigPatches.cs` — Harmony postfix on `InGame.Update` (the per-frame driver) + coroutine fallback.
-  - `PlayerRig.cs` — player position/yaw/pitch in managed code, projected onto BTD6's camera.
-  - `TowerPlacer.cs` — screen-centre raycast → `TowerManager.CreateTower`.
+  - `BloonsVRMod.cs` — entry point + per-frame orchestrator, driven by `OnUpdate()`. Harmony patches
+    register here too, in `OnApplicationStart`.
+  - `PlayerRig.cs` — player state in managed code and the rig's own unparented camera.
+  - `TowerPlacer.cs` — screen-centre raycast → `TowerManager.CreateTower`, plus the V/Tab/B/C/F hotkeys.
+  - `InputOverride.cs` — the three-layer WASD/mouse block and the Harmony prefixes for it.
+  - `InputReader.cs` — raw-device key reads. The only place our input comes from.
+  - `SpriteBillboard.cs` — makes 2D sprites face the player (`B` to toggle). **Does not stick yet.**
+  - `DisplayRotationPatch.cs` — Harmony hooks probing how BTD6 writes display transforms.
+  - `CursorButton.cs` — uGUI overlay that releases the cursor for BTD6's menus.
+  - `PixelFont.cs` — 5x7 bitmap font rendered into a `Texture2D`; no runtime font exists.
   - `Btd6Map.cs` — defensive helpers over `GameModel` / `MapModel.areas` / `AreaModel`.
   - `Hotkeys.cs` — rebindable keys, because BTD6 also binds keys.
-- `universal-modder/` — vendored agent toolkit (`um` CLI, skills, knowledge base). Read-only.
+- `tools/font_preview.py` — renders the font glyphs to a PNG so they can be eyeballed.
+- `universal-modder/` — vendored agent toolkit, **gitignored**. Not part of this project.
 - `MODLOG.md` — the journal. Update it with every change and every new finding.
 
 ## Commands

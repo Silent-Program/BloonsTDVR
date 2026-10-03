@@ -1,7 +1,7 @@
-# BloonsVR
+# BloonsTDVR
 
-A VR-oriented mod for **Bloons TD 6**: puts the player *inside* a match — first-person movement through a
-real 3D map, with towers placed by pointing at them.
+VR mod for Bloons TD 6. Puts the player *inside* a match — first-person movement through a real 3D map,
+with towers placed by pointing at them.
 
 Built as a MelonLoader mod against BTD6's IL2CPP build (Unity 6000.0.58f2).
 
@@ -107,3 +107,7 @@ behind each decision. Start there if you are contributing.
   [BTD6 Mod Helper](https://github.com/gurrenm3/BTD-Mod-Helper).
 - Built with the [universal-modder](https://github.com/rehan-remade/universal-modder) toolkit.
 - Built with AI assistance.
+
+## License
+
+[Apache License 2.0](LICENSE).
