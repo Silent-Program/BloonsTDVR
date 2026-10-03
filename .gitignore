@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+
+# Never commit the game's own files, extracted assets, decompiled code, or a built mod DLL.
+# The DLL is a release artefact, not source.
+*.dll
+*.pdb
+
+# universal-modder is a separate vendored MIT project (github.com/rehan-remade/universal-modder).
+# It is a local tool, not part of this mod. Remove this line if you vendor it deliberately.
+universal-modder/
+
+# decompile / scan scratch
+out/
+*-decomp/
+
+# editor noise
+.vs/
+.idea/
+*.user
