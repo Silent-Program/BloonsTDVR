@@ -1,3 +1,4 @@
+using System.Linq;
 using BTD_Mod_Helper;
 using Il2CppAssets.Scripts.Unity.UI_New.InGame;
 using MelonLoader;
@@ -76,6 +77,7 @@ namespace BloonsVR
         public override void OnApplicationStart()
         {
             base.OnApplicationStart();
+            MelonLogger.Msg("[BloonsVR] OnApplicationStart called - applying Harmony patches");
 
             var harmony = new HarmonyLib.Harmony("com.bloonsvr");
             var assembly = typeof(BloonsVRMod).Assembly;

@@ -357,6 +357,13 @@ namespace BloonsVR
     [HarmonyPatch(typeof(Input), "GetKey", new[] { typeof(KeyCode) })]
     internal static class BlockLegacyGetKey
     {
+        static BlockLegacyGetKey()
+        {
+            MelonLogger.Msg("[BloonsVR] Layer 1: BlockLegacyGetKey patch class loaded");
+            // Prevent static constructor optimization
+            _ = typeof(BlockLegacyGetKey);
+        }
+
         private static bool Prefix(KeyCode key, ref bool __result)
             => InputOverride.SuppressKey(key, ref __result);
     }
@@ -364,6 +371,12 @@ namespace BloonsVR
     [HarmonyPatch(typeof(Input), "GetKeyDown", new[] { typeof(KeyCode) })]
     internal static class BlockLegacyGetKeyDown
     {
+        static BlockLegacyGetKeyDown()
+        {
+            MelonLogger.Msg("[BloonsVR] Layer 1: BlockLegacyGetKeyDown patch class loaded");
+            _ = typeof(BlockLegacyGetKeyDown);
+        }
+
         private static bool Prefix(KeyCode key, ref bool __result)
             => InputOverride.SuppressKey(key, ref __result);
     }
@@ -371,6 +384,12 @@ namespace BloonsVR
     [HarmonyPatch(typeof(Input), "GetKeyUp", new[] { typeof(KeyCode) })]
     internal static class BlockLegacyGetKeyUp
     {
+        static BlockLegacyGetKeyUp()
+        {
+            MelonLogger.Msg("[BloonsVR] Layer 1: BlockLegacyGetKeyUp patch class loaded");
+            _ = typeof(BlockLegacyGetKeyUp);
+        }
+
         private static bool Prefix(KeyCode key, ref bool __result)
             => InputOverride.SuppressKey(key, ref __result);
     }
@@ -378,6 +397,12 @@ namespace BloonsVR
     [HarmonyPatch(typeof(Input), "GetAxis", new[] { typeof(string) })]
     internal static class BlockLegacyGetAxis
     {
+        static BlockLegacyGetAxis()
+        {
+            MelonLogger.Msg("[BloonsVR] Layer 1: BlockLegacyGetAxis patch class loaded");
+            _ = typeof(BlockLegacyGetAxis);
+        }
+
         private static bool Prefix(string axisName, ref float __result)
             => InputOverride.SuppressAxis(axisName, ref __result);
     }
@@ -385,6 +410,12 @@ namespace BloonsVR
     [HarmonyPatch(typeof(Input), "GetAxisRaw", new[] { typeof(string) })]
     internal static class BlockLegacyGetAxisRaw
     {
+        static BlockLegacyGetAxisRaw()
+        {
+            MelonLogger.Msg("[BloonsVR] Layer 1: BlockLegacyGetAxisRaw patch class loaded");
+            _ = typeof(BlockLegacyGetAxisRaw);
+        }
+
         private static bool Prefix(string axisName, ref float __result)
             => InputOverride.SuppressAxis(axisName, ref __result);
     }
