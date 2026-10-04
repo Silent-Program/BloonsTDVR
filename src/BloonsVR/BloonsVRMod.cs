@@ -1,6 +1,8 @@
 using System.Linq;
 using BTD_Mod_Helper;
+using HarmonyLib;
 using Il2CppAssets.Scripts.Unity.UI_New.InGame;
+using Il2CppAssets.Scripts.Unity.UI_New.WorldInteractables;
 using MelonLoader;
 using UnityEngine;
 
@@ -47,6 +49,9 @@ namespace BloonsVR
 
         /// <summary>Where the player is dropped when a rig is created.</summary>
         internal static Vector3 SpawnPoint { get; private set; } = new Vector3(0f, 5f, -20f);
+
+        /// <summary>The active player rig, for Harmony patches that run outside the mod's tick.</summary>
+        internal static PlayerRig Rig => _rig;
 
         public override void OnEarlyInitialize()
         {
@@ -401,6 +406,37 @@ namespace BloonsVR
 
             var centre = sum / count;
             return new Vector3(centre.x, centre.y + 12f, centre.z - 18f);
+        }
+    }
+
+    /// <summary>
+    /// Harmony postfix on InGame.Update.
+    ///
+    /// BTD6's Update() pins the Scene camera to orthographic (60,0,0) every frame.
+    /// InGame.Update runs every frame, so writing our pose here should win if we run LAST.
+    /// We use a Postfix to run after BTD6's Update logic.
+    /// </summary>
+    [HarmonyPatch(typeof(InGame), "Update")]
+    internal static class InGameUpdatePostfix
+    {
+        private static void Postfix(InGame __instance)
+        {
+            if (BloonsVRMod.Rig == null || !BloonsVRMod.Rig.IsActive)
+                return;
+
+            var rig = BloonsVRMod.Rig;
+            var camera = rig.RigCamera;
+            if (camera == null)
+                return;
+
+            var transform = camera.transform;
+            var expectedPos = rig.PlayerPosition + Vector3.up * PlayerRig.EyeHeight;
+            
+            // Always log to verify postfix is firing
+            MelonLogger.Msg($"[BloonsVR] InGameUpdate: rig={rig.IsActive}, camera={camera.name}, currentPos={transform.position}, expectedPos={expectedPos}");
+            
+            transform.position = expectedPos;
+            transform.rotation = Quaternion.Euler(rig.Pitch, rig.Yaw, 0f);
         }
     }
 }
