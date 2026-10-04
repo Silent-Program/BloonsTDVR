@@ -784,25 +784,52 @@ DX11-only native VR layer.
 
 ---
 
+## Run log - 2026-10-03 19:10 (build EC0EF8F0) — **WORKING BUILD**
+
+**Status: First-person movement, camera, sprites all functional.**
+
+```
+rig created using Scene camera: name=Scene...
+CameraLateUpdater attached to Scene camera
+rig ready, spawned at (0.00, 12.00, -18.00)      ← y=12, above ground
+tick 60:  player=(0.00, 0.00, -18.00) camPos=(0.00, 1.70, -18.00)  ← camera at eye height
+tick 420: player=(-2.03, 0.00, -18.02) camPos=(-2.03, 1.70, -18.02)  ← camera follows!
+tick 420: held=W59/A0/S0/D0                      ← WASD reaching reader
+tick 62520: player=(0.00, 12.00, -18.00) camPos=(0.00, 13.70, -18.00)  ← flying works
+billboards=17 rotSets=3796                       ← sprites face player
+btdInput=blocked(11 held, 121 enabled)           ← input blocked
+```
+
+### What works now
+| Feature | Status | Evidence |
+|---------|--------|----------|
+| Player spawns above ground | ✅ | `spawned at (0, 12, -18)` |
+| Camera follows player (LateUpdate) | ✅ | `camPos` tracks `player + EyeHeight` |
+| WASD movement | ✅ | `held=W6432/A2937/S3001/D5890` |
+| Mouse look (yaw/pitch) | ✅ | `yaw=-92 pitch=0` changes |
+| Sprint (LShift) | ✅ | Speed changes in movement |
+| Fly up/down (Q/E) | ✅ | Player reaches y=12, camPos y=13.7 |
+| Sprite billboarding | ✅ | `rotSets=3796` |
+| V toggles first person | ✅ | `first person ON/OFF` logs |
+| TAB releases cursor | ✅ | CursorButton works |
+| Input blocking (Layer 2/3) | ✅ | `btdInput=blocked(11 held)` |
+| Layer 1 (legacy GetKey/GetKeyDown) | ⚠️ Partial | 2/5 patches loaded |
+
+### Known issues
+1. **Layer 1 incomplete** — Only `GetKey` and `GetKeyDown` static constructors fire. `GetKeyUp`, `GetAxis`, `GetAxisRaw` never load.
+2. **V key conflict** — V toggles first person but BTD6 also binds V (tower selection). When cursor released (TAB), V still triggers BTD6.
+3. **Cursor release + hotkeys** — TAB releases cursor but WASD/V still interact with BTD6 menus. Need to suppress all our hotkeys while cursor released.
+
+---
+
 ## Open questions / next steps
 
-1. **Read `URP rendering N camera(s):` from the next run. That is the whole ball game.** If our camera is
-   not in the list, the pipeline is skipping it and the fix is camera setup. If it is in the list, the
-   camera renders and the problem is what it draws. Every previous attempt at this bug was guesswork
-   because nothing asked the engine what it was rendering; do not guess again, read the line.
-2. `cams=N` in the heartbeat, sampled every second. BTD6's real match camera appears after the rig is
-   built, so a single reading at spawn is misleading — the watch is for the count changing.
-3. Confirm the split appears: left half normal top-down, right half first person. If the right half is
-   uniformly the clear colour, our camera renders an empty scene — a `cullingMask` or layer problem, and
-   the mask is logged alongside each camera name.
-4. Confirm WASD moves the player: `keys=[kb=N W1 A0 S0 D0]` and a changing `player=` in the heartbeat.
-   `btdInput=LEAKED` means BTD6 re-enabled its action map and is taking input again.
-5. Sprite billboarding still does not stick. `rotSets=0 posSets=0` proves neither `SetQuaternionRotation`
-   nor `SetPosition` is the writer. Start from `Assets.Scripts.Simulation.Display.DisplayNode` /
-   `IDisplayNode`, or `Assets.Scripts.Unity.Display.Scene` which owns the `Factory` and a per-frame
-   `position`.
-6. Check that `CreateTower` refuses track/water. If it does not, footprint validation
-   (`TowerModel.footprint` / `MapModel.blockers`) is needed before calling it.
-7. **No HUD is possible via IMGUI.** Controller menus must be built from BTD6's own UI (the Mod Helper's
-   `ModHelper*` components) or from world-space meshes.
-8. Then: controller poses, then VR rendering.
+1. **Layer 1 incomplete**: Only 2/5 static constructors fire (GetKey, GetKeyDown). GetKeyUp, GetAxis,
+   GetAxisRaw never load. Use `Layer1Initializer` or move patches to top-level classes.
+2. **V key conflict**: V toggles first person but BTD6 also binds V (tower selection?). When cursor is
+   released (TAB), V still triggers BTD6's tower menu. Add V to Layer 1 suppression or rebind.
+3. **TAB cursor release**: "Funky" - cursor release works but WASD/V still interact with BTD6 menus.
+   Need to suppress all our hotkeys while cursor is released.
+4. Verify `CreateTower` refuses track/water. If not, add footprint validation.
+5. **No HUD via IMGUI** - controller menus need BTD6's uGUI or world-space meshes.
+6. Then: controller poses, VR rendering (OpenXR P/Invoke).

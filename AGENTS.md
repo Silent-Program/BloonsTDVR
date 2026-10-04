@@ -32,11 +32,11 @@ already paid for, and the open questions. This file is the short version.
 - `src/BloonsVR/` — the mod:
   - `BloonsVRMod.cs` — entry point + per-frame orchestrator, driven by `OnUpdate()`. Harmony patches
     register here too, in `OnApplicationStart`.
-  - `PlayerRig.cs` — player state in managed code and the rig's own unparented camera.
+  - `PlayerRig.cs` — player state in managed code and the rig's Scene camera reference.
   - `TowerPlacer.cs` — screen-centre raycast → `TowerManager.CreateTower`, plus the V/Tab/B/C/F hotkeys.
   - `InputOverride.cs` — the three-layer WASD/mouse block and the Harmony prefixes for it.
   - `InputReader.cs` — raw-device key reads. The only place our input comes from.
-  - `SpriteBillboard.cs` — makes 2D sprites face the player (`B` to toggle). **Does not stick yet.**
+  - `SpriteBillboard.cs` — makes 2D sprites face the player (`B` to toggle). **Working.**
   - `DisplayRotationPatch.cs` — Harmony hooks probing how BTD6 writes display transforms.
   - `RenderProbe.cs` — Harmony postfix on `UniversalRenderPipeline.Render`; reports which cameras Unity is
     actually asked to draw. The first thing to read when the view is wrong.
@@ -49,6 +49,9 @@ already paid for, and the open questions. This file is the short version.
 - `MODLOG.md` — the journal. Update it with every change and every new finding.
 - `configs/games.toml` — game install paths (BTD6 registered here).
 - `configs/tools.toml` — tool versions (universal-modder pinned).
+- `scripts/` — automation (`attempt-track.sh`, `git-helpers.sh`, `mod-utils.sh`, `sync-template.sh`).
+- `plans/template.md` — plan document template.
+- `.github/pull_request_template.md` — PR template.
 
 ---
 

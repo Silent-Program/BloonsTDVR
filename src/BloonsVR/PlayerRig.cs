@@ -173,6 +173,17 @@ namespace BloonsVR
             _spawned = true;
         }
 
+        /// <summary>
+        /// Sync camera transform immediately (for first frame before LateUpdate runs).
+        /// </summary>
+        public void SyncCameraNow()
+        {
+            if (_sceneCamera == null) return;
+            var transform = _sceneCamera.transform;
+            transform.position = _playerPosition + Vector3.up * EyeHeight;
+            transform.rotation = Quaternion.Euler(_pitch, _yaw, 0f);
+        }
+
         public void Tick()
         {
             if (!IsActive || _sceneCamera == null) return;

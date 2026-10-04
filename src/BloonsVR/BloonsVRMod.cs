@@ -1,5 +1,6 @@
 using BTD_Mod_Helper;
 using HarmonyLib;
+using Il2CppInterop.Runtime.Attributes;
 using Il2CppAssets.Scripts.Unity.UI_New.InGame;
 using Il2CppAssets.Scripts.Unity.UI_New.WorldInteractables;
 using MelonLoader;
@@ -7,6 +8,66 @@ using UnityEngine;
 
 namespace BloonsVR
 {
+    /// <summary>
+    /// MonoBehaviour that runs LateUpdate on the Scene camera to apply our first-person pose.
+    /// Added to the Scene camera when the rig is created, removed on shutdown.
+    /// [RegisterTypeInIl2Cpp] ensures Il2CppInterop knows about this type for AddComponent.
+    /// </summary>
+    [RegisterTypeInIl2Cpp]
+    internal class CameraLateUpdater : MonoBehaviour
+    {
+        private PlayerRig _rig;
+
+        public void Initialize(PlayerRig rig)
+        {
+            _rig = rig;
+        }
+
+        private void LateUpdate()
+        {
+            if (_rig != null && _rig.IsActive)
+            {
+                var camera = _rig.RigCamera;
+                if (camera != null)
+                {
+                    var transform = camera.transform;
+                    transform.position = _rig.PlayerPosition + Vector3.up * PlayerRig.EyeHeight;
+                    transform.rotation = Quaternion.Euler(_rig.Pitch, _rig.Yaw, 0f);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Force all Layer 1 static constructors to run at startup so legacy Input.GetKey patches are active.
+    /// </summary>
+    internal static class Layer1Initializer
+    {
+        internal static void Initialize()
+        {
+            // Force static constructors for all Layer 1 patch classes.
+            // They're nested internal types in InputOverride, so use reflection.
+            var inputOverrideType = typeof(InputOverride);
+            var nestedTypes = new[]
+            {
+                "BlockLegacyGetKey",
+                "BlockLegacyGetKeyDown",
+                "BlockLegacyGetKeyUp",
+                "BlockLegacyGetAxis",
+                "BlockLegacyGetAxisRaw"
+            };
+            foreach (var name in nestedTypes)
+            {
+                var nested = inputOverrideType.GetNestedType(name, System.Reflection.BindingFlags.NonPublic);
+                if (nested != null)
+                {
+                    // Accessing the type forces static constructor execution.
+                    var _ = nested;
+                }
+            }
+        }
+    }
+
     /// <summary>
     /// Mod entry point and per-frame orchestrator.
     ///
@@ -24,6 +85,7 @@ namespace BloonsVR
     {
         private static PlayerRig _rig;
         private static TowerPlacer _placer;
+        private static CameraLateUpdater _lateUpdater;
 
         private static int _lastFrame = -1;
         private static bool _disabled;
@@ -55,6 +117,7 @@ namespace BloonsVR
         public override void OnEarlyInitialize()
         {
             base.OnEarlyInitialize();
+            Layer1Initializer.Initialize(); // Force all Layer 1 static constructors to run
             MelonLogger.Msg("[BloonsVR] loaded. V = first person, WASD = move, TAB = cursor, B = billboards, C = tower, F = place.");
             CursorButton.OnToggleRequested = () => _rig?.SetCursorLocked(!_rig.CursorLocked);
         }
@@ -267,6 +330,24 @@ namespace BloonsVR
 
             rig.Teleport(SpawnPoint, 0f);
 
+            // Sync camera immediately so first frame isn't stuck at (0,0,0) before LateUpdate runs.
+            rig.SyncCameraNow();
+
+            // Add LateUpdate driver to the Scene camera so we win the transform fight.
+            // [RegisterTypeInIl2Cpp] on CameraLateUpdater ensures Il2CppInterop knows this type.
+            var cameraGo = inGame.sceneCamera.gameObject;
+            var lateUpdater = cameraGo.AddComponent(Il2CppInterop.Runtime.Il2CppType.Of<CameraLateUpdater>())
+                .TryCast<CameraLateUpdater>();
+            if (lateUpdater != null)
+            {
+                lateUpdater.Initialize(rig);
+                MelonLogger.Msg("[BloonsVR] CameraLateUpdater attached to Scene camera");
+            }
+            else
+            {
+                MelonLogger.Warning("[BloonsVR] failed to attach CameraLateUpdater");
+            }
+
             _rig = rig;
             _placer = new TowerPlacer(rig);
 
@@ -285,6 +366,13 @@ namespace BloonsVR
             InputOverride.SetBlocking(false);
             CursorButton.Destroy();
             SpriteBillboard.Reset();
+
+            if (_lateUpdater != null)
+            {
+                UnityEngine.Object.Destroy(_lateUpdater);
+                _lateUpdater = null;
+            }
+
             _rig?.Shutdown();
             _rig = null;
             _placer = null;
@@ -409,32 +497,6 @@ namespace BloonsVR
 
             var centre = sum / count;
             return new Vector3(centre.x, centre.y + 12f, centre.z - 18f);
-        }
-    }
-
-    /// <summary>
-    /// Harmony postfix on WorldCameraController.LateUpdate.
-    ///
-    /// BTD6's Update() pins the Scene camera to orthographic (60,0,0) every frame.
-    /// WorldCameraController.LateUpdate runs AFTER Update, so writing our pose here wins.
-    /// This avoids creating our own camera (URP ignores it) and adding MonoBehaviours at runtime (IL2CPP fails).
-    /// </summary>
-    [HarmonyPatch(typeof(WorldCameraController), "LateUpdate")]
-    internal static class WorldCameraControllerLateUpdatePostfix
-    {
-        private static void Postfix(WorldCameraController __instance)
-        {
-            if (BloonsVRMod.Rig == null || !BloonsVRMod.Rig.IsActive)
-                return;
-
-            var rig = BloonsVRMod.Rig;
-            var camera = rig.RigCamera;
-            if (camera == null)
-                return;
-
-            var transform = camera.transform;
-            transform.position = rig.PlayerPosition + Vector3.up * PlayerRig.EyeHeight;
-            transform.rotation = Quaternion.Euler(rig.Pitch, rig.Yaw, 0f);
         }
     }
 }
