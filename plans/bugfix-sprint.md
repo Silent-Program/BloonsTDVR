@@ -34,28 +34,26 @@ Fix all known Phase 1 bugs before starting Phase 2 (3D map → VR). Current bugs
 - [ ] Use `Btd6Map` to find valid area center + height at rig initialization
 - [ ] Test: Player spawns at y=12 (above ground), not inside geometry
 
-### Phase 5: Camera Fight (LateUpdate Timing)
-- [ ] Verify `WorldCameraControllerLateUpdatePostfix` runs AFTER BTD6's Update
-- [ ] Test: Camera never snaps back to (0,0,0) rot(60,0,0)
+### Phase 3: V Key Conflict (In Progress)
+- [ ] Add `Key.V` to Layer 1 suppression (or rebind first-person toggle to another key)
+- [ ] Test: V toggles first person without opening BTD6 tower menu
 
-### Phase 6: Sprite Billboard Stickiness
-- [ ] Find actual transform writer: `DisplayNode`/`IDisplayNode`/`Scene`
-- [ ] Patch the actual writer, not `SetQuaternionRotation`/`SetPosition`
-- [ ] Test: Sprites stay facing player, don't flip back
-
-### Phase 3: TAB Cursor Release Hotkey Leak
+### Phase 4: TAB Cursor Release Hotkey Leak
 - [ ] In `InputOverride.Tick()`, check `CursorLocked` and suppress all our hotkeys when `false`
 - [ ] Test: TAB releases cursor, WASD/V do nothing in BTD6 menus
 
-### Phase 3: Player Spawn Fix
+### Phase 5: Player Spawn Fix
 - [ ] Use `Btd6Map` to find valid area center + height at rig initialization
 - [ ] Test: Player spawns at y=12 (above ground), not inside geometry
 
-### Phase 5: Camera Fight (LateUpdate Timing)
-- [ ] Verify `WorldCameraControllerLateUpdatePostfix` runs AFTER BTD6's Update
-- [ ] Test: Camera never snaps back to (0,0,0) rot(60,0,0)
+### Phase 6: Camera Fight (InGame.Update Timing) ✅ DONE
+- [x] Switch from WorldCameraController.LateUpdate to InGame.Update postfix
+- [x] Test: Camera follows player perfectly (currentPos matches expectedPos)
+- [x] Test: Camera tracks player position + EyeHeight perfectly
+- [x] Test: V toggle works (first person ON/OFF logs)
+- [x] Test: Camera never snaps back to (0,0,0) rot(60,0,0)
 
-### Phase 6: Sprite Billboard Stickiness
+### Phase 7: Sprite Billboard Stickiness
 - [ ] Find actual transform writer: `DisplayNode`/`IDisplayNode`/`Scene`
 - [ ] Patch the actual writer, not `SetQuaternionRotation`/`SetPosition`
 - [ ] Test: Sprites stay facing player, don't flip back
