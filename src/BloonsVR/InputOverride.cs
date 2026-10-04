@@ -56,6 +56,8 @@ namespace BloonsVR
             {
                 _blockingFrames = 0;
                 Attach();
+                // Force immediate scan when cursor is locked to catch any new action maps
+                ScanWasdActions();
             }
             else
             {
@@ -249,7 +251,7 @@ namespace BloonsVR
             if (!p.StartsWith("<keyboard>"))
                 return false;
 
-            return p.EndsWith("/w") || p.EndsWith("/a") || p.EndsWith("/s") || p.EndsWith("/d");
+            return p.EndsWith("/w") || p.EndsWith("/a") || p.EndsWith("/s") || p.EndsWith("/d") || p.EndsWith("/v");
         }
 
         // ---------------------------------------------------------------- shared
@@ -259,9 +261,9 @@ namespace BloonsVR
             if (!_blocking)
                 return true;
 
-            // KeyCode.W = 87, A = 65, S = 83, D = 68.
+            // KeyCode.W = 87, A = 65, S = 83, D = 68, V = 86.
             int k = (int)key;
-            if (k != 87 && k != 65 && k != 83 && k != 68)
+            if (k != 87 && k != 65 && k != 83 && k != 68 && k != 86)
                 return true;
 
             result = false;
@@ -347,6 +349,9 @@ namespace BloonsVR
             _lastScannedCount = -1;
             _blockingFrames = 0;
             LegacyProbes.Clear();
+
+            // Force immediate rescan when cursor is released to catch any new action maps
+            ScanWasdActions();
         }
     }
 
