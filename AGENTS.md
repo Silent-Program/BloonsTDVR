@@ -143,6 +143,64 @@ universal-modder deploy <mod-path> --game <game-id>
    - Plan conflicts with existing work
    - Game version/compatibility unclear
    - Multiple valid approaches exist
+8. **Track attempts per task** — if stuck on same problem 3+ times, **STOP and re-evaluate** (see Loop Detection below).
+
+---
+
+## 🔄 Loop Detection & Prevention
+
+### The Problem
+Agents can get stuck in loops: applying the same fix repeatedly, trying variations of the same approach, or overcomplicating a simple problem.
+
+### Detection Rule
+**If you attempt the same task/fix 3+ times without success → PAUSE and re-evaluate.**
+
+### Tracking Mechanism
+Log each attempt in the plan document under a new section:
+
+```markdown
+## Attempt Log
+### Task: <description>
+| Attempt | Date | Approach | Result | Notes |
+|---------|------|----------|--------|-------|
+| 1 | 2026-10-03 | Tried X | Failed: error Y | |
+| 2 | 2026-10-03 | Tried X with Z | Failed: error Y | |
+| 3 | 2026-10-03 | Tried X differently | Failed: error Y | ⚠️ TRIGGER: 3 attempts |
+```
+
+### Re-evaluation Protocol (Trigger at 3 attempts)
+**STOP. Do not attempt a 4th time.** Instead:
+
+1. **Step back** — What is the actual goal? (Not the current approach)
+2. **Question assumptions** — Is the problem what I think it is?
+3. **Search alternatives** — Different tool? Different method? Different order?
+4. **Simplify** — Am I overcomplicating? Is there a simpler path?
+5. **Ask user** — "I've tried 3 approaches for X. Should I try Y instead?"
+6. **Document decision** — Record the pivot in the attempt log
+
+### Helper Script
+Use `scripts/attempt-track.sh` to log and check attempts:
+
+```bash
+# Log an attempt
+./scripts/attempt-track.sh log "Fix BSA packing" "Tried bsarch with --format bsa" "Failed: invalid header"
+
+# Check if trigger threshold reached
+./scripts/attempt-track.sh check "Fix BSA packing"
+# Returns: "ATTEMPT 3 - TRIGGER RE-EVALUATION" or "ATTEMPT 1 - CONTINUE"
+```
+
+### Common Loop Patterns to Watch
+| Pattern | Signal | Better Approach |
+|---------|--------|-----------------|
+| Same error, same fix | Error unchanged after fix | Fix is wrong; diagnose root cause |
+| Tweaking parameters | 3+ parameter variations | Step back; understand what params do |
+| Adding complexity | Each attempt adds more code | Simplify; remove layers |
+| Tool fighting | Tool X fails, try tool Y, then Z | Use right tool for job; check docs |
+| Revert → retry | Git revert then same approach | Don't retry same thing; change approach |
+
+### Agent Rule
+> **Three strikes = pivot.** If you've logged 3 failed attempts for the same task, you MUST re-evaluate before continuing. Document the pivot in the plan.
 
 ---
 
