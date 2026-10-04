@@ -79,8 +79,8 @@ namespace BloonsVR
             _sceneCamera.depth = 100f; // draw last (though it's the only one URP renders)
             _sceneCamera.rect = new Rect(0f, 0f, 1f, 1f);
 
-            IsActive = true;
-            LockCursor(true);
+            IsActive = false; // Start in BTD6 view
+            LockCursor(false); // Start with cursor unlocked for BTD6 menus
 
             MelonLogger.Msg($"[BloonsVR] rig created using Scene camera: {Describe(_sceneCamera)}");
             return true;
@@ -138,7 +138,7 @@ namespace BloonsVR
                     _sceneCamera.depth = 100f;
                     _sceneCamera.rect = new Rect(0f, 0f, 1f, 1f);
                 }
-                LockCursor(true);
+                LockCursor(false); // Start with cursor unlocked for BTD6 menus
                 MelonLogger.Msg("[BloonsVR] first person ON - controlling Scene camera");
             }
             else
