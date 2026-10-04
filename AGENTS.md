@@ -280,6 +280,24 @@ open_pr
 | New feature, new tool, non-breaking | **minor** | `v1.2.3` → `v1.3.0` |
 | Breaking change, config restructure | **major** | `v1.2.3` → `v2.0.0` |
 
+### Pre-1.0 Versioning Rules (0.x.y)
+**Special handling for versions before v1.0.0:**
+
+| Current Version | Change Type | Behavior |
+|-----------------|-------------|----------|
+| `0.0.x` (patch) | Any fix/feat | **Auto-increment patch** — no prompt, no build file |
+| `0.x.0` (minor) | feat/new tool | **Requires BUILD.md** — prompts confirmation, generates build file |
+| `0.x.y` (patch) | fix/tweak | Standard patch bump (interactive) |
+| `0.x.y` | Breaking | Major bump to `1.0.0` (interactive) |
+
+**Rules:**
+- **0.0.x → 0.0.x+1**: Fully automatic. `version_bump` detects patch in 0.0.x, increments silently.
+- **0.x.0 → 0.x+1.0**: Requires `BUILD.md`. `version_bump` prompts, generates build metadata file, stages it.
+- **BUILD.md contents**: Version, plan ID, branch, commit hash, timestamp, changes since last tag, validation checklist.
+- **After v1.0.0**: Standard interactive version selection (patch/minor/major/custom).
+
+---
+
 ### After PR Merge
 1. **Tag created automatically** on merge (via GitHub UI or `create_release`)
 2. **Changelog updated** in PR description

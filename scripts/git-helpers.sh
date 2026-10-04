@@ -347,9 +347,62 @@ create_release() {
     log_info "Open PR from $release_branch to $main_branch for final review"
 }
 
-# version_bump: Interactive version bump for PR
+# is_pre_release: Check if version is pre-1.0 (0.x.y)
 # DESCRIPTION:
-#   Prompts for bump type, calculates new version, creates tag on merge
+#   Returns 0 if major version is 0, 1 otherwise
+is_pre_release() {
+    local version="${1:-}"
+    local major=$(echo "$version" | sed -E 's/^v([0-9]+)\..*/\1/')
+    [[ "$major" -eq 0 ]]
+}
+
+# get_build_file: Generate build file for 0.x.0 releases
+# DESCRIPTION:
+#   Creates BUILD.md with build metadata for minor releases in 0.x range
+# ARGS: $1 = version, $2 = plan ID
+# OUTPUTS: BUILD.md file
+get_build_file() {
+    local version="${1:-}"
+    local plan_id="${2:-}"
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local commit_hash=$(git rev-parse HEAD)
+    local branch=$(git branch --show-current)
+
+    cat > BUILD.md <<EOF
+# Build Information
+
+**Version:** $version
+**Plan:** $plan_id
+**Branch:** $branch
+**Commit:** $commit_hash
+**Timestamp:** $timestamp
+**Built By:** $USER
+
+## Changes Since Last Release
+$(git log --oneline --pretty=format:"- %s (%an)" $(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)..HEAD 2>/dev/null || echo "No previous tags")
+
+## Build Artifacts
+- [ ] Mod package (.mod)
+- [ ] Source archive
+- [ ] Changelog
+
+## Validation
+- [ ] universal-modder validate passes
+- [ ] Game launches without errors
+- [ ] Mod loads in manager
+
+## Notes
+<!-- Build-specific notes -->
+EOF
+    log_info "Created BUILD.md for $version"
+}
+
+# version_bump: Smart version bump with pre-1.0 rules
+# DESCRIPTION:
+#   Handles version bumping with special rules for 0.x.y versions:
+#   - 0.0.x (patch): Auto-increment, no prompt
+#   - 0.x.0 (minor): Requires build file, prompts for confirmation
+#   - 1.0.0+: Standard interactive selection
 # USE CASE: Run before open_pr to prepare version
 version_bump() {
     local current_version=$(get_current_version)
@@ -361,6 +414,42 @@ version_bump() {
     echo ""
     log_info "Current version: $current_version"
     log_info "Suggested bump: $suggested_bump (based on commits)"
+
+    # Pre-1.0 versioning rules (0.x.y)
+    if is_pre_release "$current_version"; then
+        local major=$(echo "$current_version" | sed -E 's/^v([0-9]+)\..*/\1/')
+        local minor=$(echo "$current_version" | sed -E 's/^v[0-9]+\.([0-9]+)\..*/\1/')
+        local patch=$(echo "$current_version" | sed -E 's/^v[0-9]+\.[0-9]+\.([0-9]+).*/\1/')
+
+        # Rule: 0.0.x patches are automatic
+        if [[ "$minor" -eq 0 ]]; then
+            log_info "Pre-1.0 patch release (0.0.x) — auto-incrementing to $next_patch"
+            echo "$next_patch" > .git/pr_version
+            log_success "Version saved: $next_patch (auto)"
+            return 0
+        fi
+
+        # Rule: 0.x.0 minor requires build file
+        if [[ "$patch" -eq 0 && "$suggested_bump" == "minor" ]]; then
+            log_warn "Pre-1.0 minor release (0.x.0) — requires BUILD.md"
+            echo ""
+            echo "This will create version $next_minor with a build file."
+            read -p "Create BUILD.md and proceed? (y/N) " -n 1 -r
+            echo ""
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                log_info "Cancelled."
+                return 1
+            fi
+            local plan_id=$(ls plans/PLAN-*-${current_branch#plan/}.md 2>/dev/null | head -1 | xargs basename | sed 's/.md$//')
+            get_build_file "$next_minor" "$plan_id"
+            git add BUILD.md
+            echo "$next_minor" > .git/pr_version
+            log_success "Version saved: $next_minor (with BUILD.md)"
+            return 0
+        fi
+    fi
+
+    # Standard interactive for 1.0.0+ or non-standard bumps
     echo ""
     echo "Select version bump:"
     echo "  1) Patch  $next_patch  (bug fixes, small tweaks)"
