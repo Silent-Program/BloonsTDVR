@@ -19,3 +19,11 @@ out/
 .vs/
 .idea/
 *.user
+
+# agent files (local documentation, not for distribution)
+AGENTS.md
+MODLOG.md
+*.md
+!.github/*.md
+!plans/*.md
+!README.md
