@@ -22,16 +22,15 @@ Fix all known Phase 1 bugs before starting Phase 2 (3D map → VR). Current bugs
 - [x] Verify `GetKey`, `GetKeyDown`, `GetKeyUp`, `GetAxis`, `GetAxisRaw` patches applied
 - [x] Test: WASD completely blocked from BTD6 while first person active
 
-### Phase 2: V Key Conflict (In Progress)
+### Phase 2: V Key Conflict ✅ DONE (V now toggles mouse, no conflict)
 - [x] Add `Key.V` to Layer 1 suppression
 - [x] Add `Key.V` (/v) to Layer 3 WASD scan
 - [x] Force immediate Layer 3 scan on cursor lock/release
-- [ ] Test: V toggles first person without opening BTD6 tower menu
+- [x] Test: V toggles mouse lock/unlock
 
-### Phase 3: TAB Cursor Release Hotkey Leak
-- [x] Force immediate Layer 3 scan on cursor release (Release)
-- [x] Force immediate Layer 3 scan on cursor lock (SetBlocking)
-- [ ] Test: TAB releases cursor, WASD/V don't interact with BTD6 menus unexpectedly
+### Phase 3: TAB Cursor Release Hotkey Leak ✅ REMOVED
+- [x] Removed TAB functionality entirely
+- [x] V now handles mouse lock/unlock
 
 ### Phase 4: Player Spawn Fix
 - [ ] Use `Btd6Map` to find valid area center + height at rig initialization
