@@ -60,20 +60,76 @@ namespace BloonsVR
         ///
         /// BTD6 Mod Helper's own <c>ApplyHarmonyPatches</c> is deliberately not used: it swallows its own
         /// exceptions and only logs them, so a failed patch would be invisible here.
+        ///
+        /// Also deliberately not <c>PatchAll</c>. One ambiguous <c>[HarmonyPatch]</c> makes it throw, and
+        /// it throws part-way through — so every class it had not reached yet is silently left unpatched.
+        /// That is exactly what happened: a name-only patch on the overridden
+        /// <c>UniversalRenderPipeline.Render</c> aborted the run, and the legacy <c>Input.GetKey</c>
+        /// prefixes that deny BTD6 the movement keys went down with it. Nothing said so, because the only
+        /// evidence those patches were live was a log line that never appeared — and an absent log line is
+        /// not evidence.
+        ///
+        /// Patching each class in its own try/catch means a failure is named, contained, and the rest
+        /// still apply. Every applied class is listed, so "is Layer 1 actually live" is answerable from the
+        /// log rather than inferred from the absence of a symptom.
         /// </summary>
         public override void OnApplicationStart()
         {
             base.OnApplicationStart();
 
-            try
+            var harmony = new HarmonyLib.Harmony("com.bloonsvr");
+            var assembly = typeof(BloonsVRMod).Assembly;
+            var applied = new System.Collections.Generic.List<string>();
+            var failed = new System.Collections.Generic.List<string>();
+
+            foreach (var type in assembly.GetTypes())
             {
-                new HarmonyLib.Harmony("com.bloonsvr").PatchAll(typeof(BloonsVRMod).Assembly);
-                MelonLogger.Msg("[BloonsVR] Harmony patches applied.");
+                if (type == null || !IsPatchTarget(type))
+                    continue;
+
+                try
+                {
+                    harmony.CreateClassProcessor(type).Patch();
+                    applied.Add(type.Name);
+                }
+                catch (System.Exception e)
+                {
+                    // The first line of e is the useful one; the rest is Harmony stack noise.
+                    failed.Add($"{type.Name}: {e.Message.Split('\n')[0].Trim()}");
+                }
             }
-            catch (System.Exception e)
+
+            MelonLogger.Msg(
+                $"[BloonsVR] Harmony: {applied.Count} patch class(es) applied " +
+                $"[{string.Join(", ", applied)}]");
+
+            foreach (var problem in failed)
+                MelonLogger.Error($"[BloonsVR] Harmony: patch class FAILED -> {problem}");
+        }
+
+        /// <summary>
+        /// True when this type, or any of its methods, carries a <c>[HarmonyPatch]</c>.
+        ///
+        /// Method-level patches are included because <c>PatchAll</c> supported them and a mod that quietly
+        /// stops honouring them is a trap for whoever edits this next.
+        /// </summary>
+        private static bool IsPatchTarget(System.Type type)
+        {
+            if (type.GetCustomAttributes(typeof(HarmonyLib.HarmonyPatch), false).Length > 0)
+                return true;
+
+            foreach (var method in type.GetMethods(
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Static |
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.DeclaredOnly))
             {
-                MelonLogger.Error($"[BloonsVR] Harmony patch failed: {e}");
+                if (method.GetCustomAttributes(typeof(HarmonyLib.HarmonyPatch), false).Length > 0)
+                    return true;
             }
+
+            return false;
         }
 
         /// <summary>

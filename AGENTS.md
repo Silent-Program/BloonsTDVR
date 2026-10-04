@@ -226,6 +226,14 @@ fooled. `LogDeviceDiagnostics` dumps `InputSettings.updateMode` and every device
 - Never poll `Keyboard.current` alone either: it returned false for every movement key while
   `Mouse.current` worked, so the player could not walk. Read through `InputReader`, which asks every
   keyboard in `InputSystem.devices`. Heartbeat prints `keys=[kb=N W0 A0 S0 D0]` — read that first.
+  **That snapshot samples one frame per heartbeat and has now lied three times.** Read it only beside the
+  cumulative counters `frames=N any=M held=W123/A0/S0/D0 mouse=Kf/Lpx`. `W0` next to a heartbeat means
+  "not held on that frame" and nothing more — the player walked 24 units from `(0,0,-18)` to
+  `(-5.26,0,6.51)` while `W0` printed on every line. **Anything reported as instantaneous needs a
+  cumulative counter beside it before it is allowed to become a conclusion.**
+  - The real control is a *working hotkey on the same code path*. `V` goes through
+    `InputReader.PressedThisFrame`, the same device indexer as `Held(Key.W)`; `V` firing while `W` read 0
+    proved the path good and the theory wrong. `Keyboard.current` being non-null is not evidence.
 - `InputOverride` is three layers, all scoped to "rig active and cursor locked":
   1. **Legacy Harmony prefixes** on `GetKey`/`GetKeyDown`/`GetKeyUp`/`GetAxis`/`GetAxisRaw`, plus a
      log-only `GetButton` probe. **`new[] { typeof(KeyCode) }` is mandatory** — `GetKey` is overloaded on
@@ -235,12 +243,20 @@ fooled. `LogDeviceDiagnostics` dumps `InputSettings.updateMode` and every device
      `m_UI_MiddleClick`, `m_UI_RightClick`, `m_UI_ScrollWheel`. Deliberately **not** `m_UI_Submit` /
      `m_UI_Click` / `m_UI_Navigate` — the player needs those to click the shop.
   3. **A scan** of `InputSystem.ListEnabledActions()` for `<keyboard>/w|a|s|d` bindings, re-asserted each
-     frame. That call returns an **Il2Cpp list**: iterate with `var`, never assign to a
-     `System.Collections.Generic.List`.
+     frame and **rescanned every 60 frames**. That call returns an **Il2Cpp list**: iterate with `var`,
+     never assign to a `System.Collections.Generic.List`. The scan must repeat — it saw only 10 enabled
+     actions and BTD6 enables more maps mid-match, so a one-shot scan misses every later map.
+- **Never use `Harmony.PatchAll`.** It walks the assembly and **throws part way through**, so every class
+  it had not reached stays unpatched, silently. A name-only patch on the overridden
+  `UniversalRenderPipeline.Render` aborted the run and took the legacy `Input.GetKey` prefixes with it —
+  two runs of "BTD6 still reacts to WASD" were caused by that, and nothing said so. Loop over
+  `assembly.GetTypes()`, patch each `[HarmonyPatch]` class in its own try/catch, and **log every class
+  applied by name**. The only evidence Layer 1 was live was a log line that never appeared; an absent log
+  line is not evidence.
 - Harmony patches register in `OnApplicationStart` — `OnInitializeMelon` is sealed on `BloonsMod`. Use
   your own `Harmony` instance; BTD6 Mod Helper's `ApplyHarmonyPatches` swallows its own exceptions.
-- Heartbeat reports `btdInput=blocked|LEAKED|not-attached|released`. **`LEAKED` means BTD6 re-enabled its
-  action map and is taking WASD and mouse look again.**
+- Heartbeat reports `btdInput=blocked(N held, M enabled)`. **`LEAKED` means BTD6 re-enabled an action we
+  held.** `M` climbing while `N` stays flat means BTD6 enabled a map the rescan has not reached yet.
 
 ## Sprites
 

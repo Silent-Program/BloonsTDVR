@@ -325,6 +325,72 @@ of finding who clears it rather than of finding where we set it.
 
 ---
 
+## Run log - 2026-10-03 16:56 (build A3F92071) - movement works, Layer 1 never ran
+
+Same DLL as the 16:43 run, so the same aborted `PatchAll`. Two results, one good and one bad.
+
+### Movement works. The keyboard was never the problem.
+
+```
+tick  120: player=(0.00, 0.00, -18.00)  yaw=-8  keys=[kb=1 W0 A0 S0 D0]
+tick 1740: player=(-5.26, 0.00,  6.51)  yaw=-12 keys=[kb=1 W0 A0 S0 D0]
+```
+
+The player walked 24.5 units. `InputReader`, `Held(Key.W)` and the whole rig are fine — `W0` in the
+heartbeat only means the key was not held on that particular frame.
+
+That is three wrong theories killed by one log line each:
+
+| Run | Theory | What killed it |
+|---|---|---|
+| 15:43 | `Keyboard.current` returns false for gameplay keys | It does not; the player moves |
+| 16:43 | The keyboard is dead or the wrong device | `V` fires through the same `InputReader` path |
+| 16:56 | `W0` means the keys never arrive | The player moved 24 units |
+
+The lesson is not about input. It is that `keys=[...]` samples **one frame per heartbeat**, so it cannot
+distinguish "not pressed" from "not pressed *then*". Anything reported as instantaneous needs a cumulative
+counter beside it before it is allowed to become a conclusion. Now reported as
+`held=W123/A0/S0/D0 frames=N any=M mouse=Kf/Lpx`, where `mouse` is the control that proves the Input
+System is alive.
+
+### Layer 1 never fired. Zero occurrences across two runs.
+
+```
+--- Layer 1 (legacy Input prefixes) ---
+NONE - the legacy GetKey prefixes never fired once
+```
+
+No `Layer 1: legacy UnityEngine.Input prefixes are live` line, in a game where BTD6 demonstrably still
+reacts to WASD. So BTD6 was reading the movement keys through the **legacy** `UnityEngine.Input` backend
+the whole time, and the only thing that ever blocked that route was never applied.
+
+The cause is the `RenderProbe` attribute from last round. `PatchAll` walks the assembly and **throws part
+way through**, so every class it had not yet reached stayed unpatched — and the only evidence Layer 1 was
+live was a log line that never appeared. An absent log line is not evidence of absence; it was treated as
+confirmation that the mechanism was merely untriggered.
+
+Fixed by never using `PatchAll` again:
+
+```csharp
+foreach (var type in assembly.GetTypes())
+    if (IsPatchTarget(type))
+        try { harmony.CreateClassProcessor(type).Patch(); }
+        catch (Exception e) { MelonLogger.Error($"patch class FAILED -> {type.Name}: ..."); }
+```
+
+Every applied class is now listed by name, so "is Layer 1 live" is answerable from the log. One bad
+attribute can no longer take out an unrelated patch.
+
+### Layer 3 only ever scanned once
+
+`Layer 3: scanning 10 enabled action(s)` — ten, for a game with a full action map — and the `_scanned`
+flag meant it never looked again. BTD6 enables more maps during a match (tower range views, the shop,
+placement mode), so every map that was not enabled at that instant kept listening for WASD for the rest
+of the session. Now rescans every 60 frames and logs only when it actually takes something new, plus
+`blocked(N held, M enabled)` in the heartbeat so a growing `M` is visible.
+
+---
+
 ## Gotchas hit so far
 
 1. **Only the *generic* `GameObject.AddComponent<T>()` is stripped — `AddComponent(Il2CppSystem.Type)`

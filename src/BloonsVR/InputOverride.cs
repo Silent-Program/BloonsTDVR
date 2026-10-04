@@ -30,7 +30,6 @@ namespace BloonsVR
     {
         private static bool _blocking;
         private static bool _attached;
-        private static bool _scanned;
 
         private static readonly System.Collections.Generic.List<InputAction> Held =
             new System.Collections.Generic.List<InputAction>();
@@ -40,19 +39,31 @@ namespace BloonsVR
 
         internal static bool Blocking => _blocking;
 
+        /// <summary>Frames spent blocking. Drives the periodic rescan.</summary>
+        private static int _blockingFrames;
+
+        /// <summary>Rescan cadence, in frames. Roughly once a second at 60 fps.</summary>
+        private const int RescanEvery = 60;
+
         internal static void SetBlocking(bool blocking)
         {
             if (_blocking == blocking)
                 return;
 
             _blocking = blocking;
+
             if (blocking)
+            {
+                _blockingFrames = 0;
                 Attach();
+            }
             else
+            {
                 Release();
+            }
         }
 
-        /// <summary>Disable-and-re-assert, once per frame.</summary>
+        /// <summary>Disable-and-re-assert, once per frame, plus a periodic rescan.</summary>
         internal static void Tick()
         {
             if (!_blocking)
@@ -75,11 +86,12 @@ namespace BloonsVR
                 }
             }
 
-            if (!_scanned)
-            {
+            // Rescan periodically, not once. The first scan saw only 10 enabled actions, and BTD6 enables
+            // more maps as the match goes on — switching in and out of a tower's range view, opening the
+            // shop, entering placement mode. A single scan therefore misses every action map that was not
+            // enabled yet, and those are exactly the ones still listening for WASD.
+            if (++_blockingFrames % RescanEvery == 1)
                 ScanWasdActions();
-                _scanned = true;
-            }
         }
 
         // ---------------------------------------------------------------- Layer 2
@@ -134,8 +146,11 @@ namespace BloonsVR
         // ---------------------------------------------------------------- Layer 3
 
         /// <summary>
-        /// Disable any enabled action bound to a keyboard W/A/S/D. Kept because the named-action route only
-        /// covers the actions we know about, and BTD6 re-binds maps when the input mode changes.
+        /// Disable any enabled action bound to a keyboard W/A/S/D.
+        ///
+        /// Runs repeatedly, because BTD6 enables action maps during the match. Only actions that are
+        /// actually enabled are scanned, so an action map switched on later is picked up on the next pass
+        /// instead of being missed for the rest of the session.
         ///
         /// IL2CPP gotcha: <c>ListEnabledActions()</c> returns an Il2Cpp list. Iterate it with <c>var</c> and
         /// its own enumerator — never assign it to a <c>System.Collections.Generic.List</c>.
@@ -151,14 +166,13 @@ namespace BloonsVR
                     return;
                 }
 
-                MelonLogger.Msg($"[BloonsVR] Layer 3: scanning {actions.Count} enabled action(s)");
-
                 int found = 0;
+
                 var enumerator = actions.GetEnumerator();
                 while (enumerator.MoveNext())
                 {
                     var action = enumerator.Current;
-                    if (action == null || !BindsWasd(action))
+                    if (action == null || Held.Contains(action) || !BindsWasd(action))
                         continue;
 
                     string label;
@@ -170,12 +184,6 @@ namespace BloonsVR
                     catch (System.Exception)
                     {
                         label = "?";
-                    }
-
-                    if (Held.Contains(action))
-                    {
-                        MelonLogger.Msg($"[BloonsVR] Layer 3: {label} <-- already held");
-                        continue;
                     }
 
                     try
@@ -191,13 +199,22 @@ namespace BloonsVR
                     }
                 }
 
-                MelonLogger.Msg($"[BloonsVR] Layer 3: {found} new WASD-bound action(s) disabled");
+                // Only speak up when something new was taken, or every tenth pass as a liveness check.
+                // A line every second would bury the heartbeat.
+                if (found > 0)
+                    MelonLogger.Msg(
+                        $"[BloonsVR] Layer 3: pass {_blockingFrames / RescanEvery + 1}, scanned " +
+                        $"{actions.Count} enabled action(s), disabled {found} new WASD-bound action(s)");
+
+                _lastScannedCount = actions.Count;
             }
             catch (System.Exception e)
             {
                 MelonLogger.Warning($"[BloonsVR] Layer 3 scan failed: {e.Message}");
             }
         }
+
+        private static int _lastScannedCount = -1;
 
         private static bool BindsWasd(InputAction action)
         {
@@ -301,7 +318,9 @@ namespace BloonsVR
                     return "LEAKED";
             }
 
-            return "blocked";
+            // Holding N actions over M enabled ones. M growing while N stays put is the signature of
+            // BTD6 enabling an action map we have not got to yet, which is what the periodic rescan is for.
+            return $"blocked({Held.Count} held, {_lastScannedCount} enabled)";
         }
 
         private static void Release()
@@ -325,7 +344,8 @@ namespace BloonsVR
 
             Held.Clear();
             _attached = false;
-            _scanned = false;
+            _lastScannedCount = -1;
+            _blockingFrames = 0;
             LegacyProbes.Clear();
         }
     }
