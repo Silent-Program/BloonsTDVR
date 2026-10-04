@@ -1,6 +1,39 @@
 #!/usr/bin/env bash
-# Sync this mod project from the template repo (UniversalModderPriv)
-# Run from your mod project root: ./scripts/sync-template.sh
+# sync-template.sh — Pull Template Updates into Downstream Mod Project
+#
+# DESCRIPTION:
+#   Synchronizes a downstream mod project with the UniversalModderPriv template repo.
+#   Fetches latest template changes, shows diff, merges with conflict handling,
+#   and updates submodules. Essential for propagating workflow improvements.
+#
+# USAGE:
+#   ./scripts/sync-template.sh
+#   # Run from mod project root (cloned from template)
+#
+# WORKFLOW:
+#   1. Adds 'template' remote if missing (points to UniversalModderPriv)
+#   2. Fetches latest template/main
+#   3. Shows new commits not in current project
+#   4. Prompts before merging (handles unrelated histories for first sync)
+#   5. Updates git submodules (universal-modder, etc.)
+#
+# USE CASES:
+#   - Template maintainer pushed v1.1.0 with new scripts
+#   - New mod-utils.sh added to template
+#   - universal-modder submodule updated
+#   - PR template improved
+#   - First-time sync after cloning template
+#
+# REQUIREMENTS:
+#   - Git repo with template remote (auto-added)
+#   - SSH key for git@github.com (or HTTPS token)
+#   - Mod project cloned from template with --recurse-submodules
+#
+# INTEGRATION:
+#   Called by agents before starting new work:
+#   "Before starting any new mod project: Verify the template is current.
+#   If UniversalModderPriv has newer commits than your project's template
+#   remote, sync first — don't rediscover solved problems." (AGENTS.md)
 
 set -euo pipefail
 

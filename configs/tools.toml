@@ -1,12 +1,86 @@
-# Tool Version Pinning
+# Tool Version Pinning & Descriptions
 # Update versions when intentionally upgrading
+# Each tool includes: version, install_method, description, use_cases
 
 [universal-modder]
 version = "0.12.0"  # Submodule pinned to this tag/commit
 install_method = "submodule"  # Build from tools/universal-modder/
 # To update: cd tools/universal-modder && git fetch && git checkout v0.13.0
+description = "Universal game modding CLI — file patching, archive handling, format conversion, mod packaging, deployment"
+repository = "https://github.com/rehan-remade/universal-modder"
+use_cases = [
+  "Initialize new mod project structure: universal-modder init <mod-name> --game <game-id>",
+  "Apply binary patches to game files: universal-modder patch apply <patch-file> --target <game-path>",
+  "Create distributable mod packages: universal-modder package create --output <file.mod>",
+  "Validate mod structure before deployment: universal-modder validate <mod-path>",
+  "Deploy mod to game installation: universal-modder deploy <mod-path> --game <game-id>",
+  "Convert between mod formats (BAIN, FOMOD, etc.)",
+  "Extract/inspect game archives (BSA, BA2, etc.)"
+]
+build_command = "cd tools/universal-modder && cargo build --release"
+binary_path = "tools/universal-modder/target/release/universal-modder"
 
-# Add other tools as needed:
-# [xedit]
-# version = "4.1.5"
+[xedit]
+version = "4.1.5"
+install_method = "binary"
+description = "xEdit (TES5Edit/SSEEdit/FO4Edit) — Master plugin editor for Bethesda games, essential for conflict resolution, patch creation, and record editing"
+repository = "https://github.com/TES5Edit/TES5Edit"
+use_cases = [
+  "Load multiple plugins and detect conflicts: xedit.exe -quickauto <plugin.esp>",
+  "Generate conflict resolution patches: xedit.exe -autopatch <master.esp>",
+  "Clean masters from plugins: xedit.exe -clean <plugin.esp>",
+  "Compare plugin records side-by-side",
+  "Batch process plugins with scripts (pascal)",
+  "Verify plugin integrity and references"
+]
+download_url = "https://github.com/TES5Edit/TES5Edit/releases/download/4.1.5/TES5Edit_4.1.5.zip"
+
+[bsarch]
+version = "1.3.0"
+install_method = "cargo"
+description = "Bethesda Archive (BSA/BA2) CLI tool — create, extract, list, and validate game archives"
+repository = "https://github.com/briankendall/bsarch"
+use_cases = [
+  "Create BSA archive from loose files: bsarch create <source-dir> <output.bsa> --format bsa",
+  "Extract archive contents: bsarch extract <archive.bsa> <output-dir>",
+  "List archive contents: bsarch list <archive.bsa>",
+  "Validate archive integrity: bsarch verify <archive.bsa>",
+  "Convert between BSA and BA2 formats",
+  "Package loose mod files into game-ready archives"
+]
+install_command = "cargo install bsarch"
+
+[modorganizer2-cli]
+version = "2.5.1"
+install_method = "binary"
+description = "Mod Organizer 2 CLI — headless mod management for automation, profile switching, and deployment"
+repository = "https://github.com/ModOrganizer2/modorganizer"
+use_cases = [
+  "Deploy mod to MO2 profile: mo2cli deploy <mod-path> --profile <profile-name>",
+  "Enable/disable mods in profile: mo2cli enable <mod-name> --profile <profile-name>",
+  "List installed mods: mo2cli list --profile <profile-name>",
+  "Run game through MO2: mo2cli run --profile <profile-name> -- <game-args>",
+  "Export/import mod lists for reproducibility"
+]
+
+[loose-file-patcher]
+version = "0.1.0"
+install_method = "script"
+description = "Internal helper — applies loose file overrides to game data directory (wrapper around universal-modder patch)"
+use_cases = [
+  "Quickly test loose file changes without full package",
+  "Apply texture/mesh overrides during development",
+  "Revert loose file changes cleanly"
+]
+location = "scripts/mod-utils.sh"
+
+# [wrye-bash]
+# version = "307.20230508"
 # install_method = "binary"
+# description = "Wrye Bash — Advanced mod manager with bashed patch generation for leveled lists"
+# repository = "https://github.com/Wrye-Bash/Wrye-Bash"
+# use_cases = [
+#   "Generate Bashed Patch for leveled list merging",
+#   "Install/uninstall mods with BAIN wizard",
+#   "Manage mod load order and conflicts"
+# ]
