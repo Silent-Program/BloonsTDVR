@@ -1,0 +1,22 @@
+# Game Registry Configuration
+# Edit this file with your actual game install paths
+# All paths use forward slashes (/) even on Windows
+
+[skyrim-se]
+name = "Skyrim Special Edition"
+install_path = "C:/Games/Steam/steamapps/common/Skyrim Special Edition"
+mod_dir = "Data"
+mod_manager = "mo2"  # options: mo2, vortex, manual
+
+[fallout4]
+name = "Fallout 4"
+install_path = "C:/Games/Steam/steamapps/common/Fallout 4"
+mod_dir = "Data"
+mod_manager = "vortex"
+
+# Add more games as needed:
+# [game-id]
+# name = "Display Name"
+# install_path = "C:/Path/To/Game"
+# mod_dir = "Data"  # or "Mods", "mods", etc.
+# mod_manager = "manual"

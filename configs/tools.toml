@@ -1,0 +1,12 @@
+# Tool Version Pinning
+# Update versions when intentionally upgrading
+
+[universal-modder]
+version = "0.12.0"  # Check https://github.com/rehan-remade/universal-modder/releases
+install_method = "cargo"  # options: cargo, binary, scoop, winget
+# binary_url = "https://github.com/rehan-remade/universal-modder/releases/download/v0.12.0/universal-modder-x86_64-pc-windows-msvc.zip"
+
+# Add other tools as needed:
+# [xedit]
+# version = "4.1.5"
+# install_method = "binary"
