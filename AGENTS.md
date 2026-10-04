@@ -235,6 +235,58 @@ Use `scripts/attempt-track.sh` to log and check attempts:
 
 ---
 
+## GitHub Title & Description Guidelines
+
+**All GitHub fields with title/description boxes follow these conventions.**
+
+### Reference Document
+See `.github/TITLE_DESCRIPTION_GUIDELINES.md` for full details, examples, and anti-patterns.
+
+### Quick Reference
+
+| GitHub Item | Title Pattern | Description Template |
+|-------------|---------------|----------------------|
+| **Pull Request** | `type(scope): summary [vX.Y.Z]` | `.github/pull_request_template.md` |
+| **Release** | `[vX.Y.Z] summary — area` | `.github/release_template.md` |
+| **Issue** | `[TYPE] summary — game/component` | `.github/ISSUE_TEMPLATE/mod_issue.md` |
+| **Discussion** | `[CAT] summary — context` | Free-form, follow principles |
+| **Commit** | `type(scope): summary` | Body + `Plan: #PLAN-<id>` |
+
+### Core Rules
+1. **Imperative mood** — "Add feature" not "Added feature"
+2. **Scope in title** — `feat(skyrim-ui):` not `feat:`
+3. **Version in PR/Release titles** — `[vX.Y.Z]` suffix
+4. **Specific over generic** — "Fix CTD on Skyrim launch" not "Fix bug"
+5. **Actionable descriptions** — Enable action without reading code
+
+### PR Title Types
+| Type | Use For |
+|------|---------|
+| `feat` | New capability |
+| `fix` | Bug fix |
+| `refactor` | Code restructure, no behavior change |
+| `docs` | Documentation only |
+| `chore` | Maintenance, tooling, config |
+| `test` | Test additions/changes |
+| `plan` | Plan document updates |
+
+### Issue Title Prefixes
+| Type | Prefix |
+|------|--------|
+| Bug | `[BUG]` |
+| Feature | `[FEAT]` |
+| Task | `[TASK]` |
+| Research | `[RFC]` |
+| Docs | `[DOCS]` |
+
+### Release Title Format
+```
+[vX.Y.Z] <Imperative summary> — <Capability area>
+```
+Examples: `[v0.3.0] Add BSA archive support — Mod Packaging`
+
+---
+
 ## Version Control Hygiene
 
 - `main` = production-ready, deployable state
