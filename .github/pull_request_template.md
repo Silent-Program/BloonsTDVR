@@ -2,6 +2,7 @@
 
 > **Title Format:** `feat(skyrim-ui): add custom inventory menu` | `fix(fallout4): resolve CTD on load` | `docs: update AGENTS.md loop detection`
 > **Version:** This PR includes version bump: `vX.Y.Z` (see Version Bump section)
+> **Guidelines:** See `.github/TITLE_DESCRIPTION_GUIDELINES.md` for full conventions
 
 ---
 
