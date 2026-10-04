@@ -144,6 +144,17 @@ universal-modder deploy <mod-path> --game <game-id>
    - Game version/compatibility unclear
    - Multiple valid approaches exist
 8. **Track attempts per task** — if stuck on same problem 3+ times, **STOP and re-evaluate** (see Loop Detection below).
+9. **Code Quality Standard** — All code must be efficient, concise, and stable:
+   - **Zero stability issues** from poorly written code (no memory leaks, race conditions, unhandled errors, undefined behavior)
+   - **Minimal complexity** — prefer simple, readable solutions over clever abstractions
+   - **Fail fast** — validate inputs early, return clear errors, avoid silent failures
+   - **No dead code** — remove unused functions, variables, imports, commented-out blocks
+   - **Single responsibility** — each function/script does one thing well
+   - **Idempotent operations** — safe to run multiple times (scripts, deploys, patches)
+   - **Explicit over implicit** — no magic globals, hidden state, or side effects
+   - **Error handling** — every external call checked; partial failure = rollback or clear error
+   - **Performance** — avoid O(n²) loops, redundant I/O, unnecessary subprocess spawns
+   - **Shell safety** — quote variables, use `set -euo pipefail`, avoid `eval`
 
 ---
 
