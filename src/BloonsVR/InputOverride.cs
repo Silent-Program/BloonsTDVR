@@ -353,40 +353,83 @@ namespace BloonsVR
     // --- Layer 1: legacy UnityEngine.Input --------------------------------------
     // The explicit parameter list is required: GetKey is overloaded on (KeyCode) and (string), and
     // without it Harmony cannot tell them apart.
+    //
+    // Static constructor log proves the patch class was loaded and Harmony tried to patch it.
+    // If this line never appears, the patch class was never reached (e.g., PatchAll aborted early).
 
     [HarmonyPatch(typeof(Input), "GetKey", new[] { typeof(KeyCode) })]
     internal static class BlockLegacyGetKey
     {
+        static BlockLegacyGetKey()
+            => MelonLogger.Msg("[BloonsVR] Layer 1: BlockLegacyGetKey patch class loaded");
+
         private static bool Prefix(KeyCode key, ref bool __result)
-            => InputOverride.SuppressKey(key, ref __result);
+        {
+            var blocked = InputOverride.SuppressKey(key, ref __result);
+            if (!blocked && (key == KeyCode.W || key == KeyCode.A || key == KeyCode.S || key == KeyCode.D))
+                MelonLogger.Msg($"[BloonsVR] Layer 1 INTERCEPT: GetKey({key}) -> {__result}");
+            return blocked;
+        }
     }
 
     [HarmonyPatch(typeof(Input), "GetKeyDown", new[] { typeof(KeyCode) })]
     internal static class BlockLegacyGetKeyDown
     {
+        static BlockLegacyGetKeyDown()
+            => MelonLogger.Msg("[BloonsVR] Layer 1: BlockLegacyGetKeyDown patch class loaded");
+
         private static bool Prefix(KeyCode key, ref bool __result)
-            => InputOverride.SuppressKey(key, ref __result);
+        {
+            var blocked = InputOverride.SuppressKey(key, ref __result);
+            if (!blocked && (key == KeyCode.W || key == KeyCode.A || key == KeyCode.S || key == KeyCode.D))
+                MelonLogger.Msg($"[BloonsVR] Layer 1 INTERCEPT: GetKeyDown({key}) -> {__result}");
+            return blocked;
+        }
     }
 
     [HarmonyPatch(typeof(Input), "GetKeyUp", new[] { typeof(KeyCode) })]
     internal static class BlockLegacyGetKeyUp
     {
+        static BlockLegacyGetKeyUp()
+            => MelonLogger.Msg("[BloonsVR] Layer 1: BlockLegacyGetKeyUp patch class loaded");
+
         private static bool Prefix(KeyCode key, ref bool __result)
-            => InputOverride.SuppressKey(key, ref __result);
+        {
+            var blocked = InputOverride.SuppressKey(key, ref __result);
+            if (!blocked && (key == KeyCode.W || key == KeyCode.A || key == KeyCode.S || key == KeyCode.D))
+                MelonLogger.Msg($"[BloonsVR] Layer 1 INTERCEPT: GetKeyUp({key}) -> {__result}");
+            return blocked;
+        }
     }
 
     [HarmonyPatch(typeof(Input), "GetAxis", new[] { typeof(string) })]
     internal static class BlockLegacyGetAxis
     {
+        static BlockLegacyGetAxis()
+            => MelonLogger.Msg("[BloonsVR] Layer 1: BlockLegacyGetAxis patch class loaded");
+
         private static bool Prefix(string axisName, ref float __result)
-            => InputOverride.SuppressAxis(axisName, ref __result);
+        {
+            var blocked = InputOverride.SuppressAxis(axisName, ref __result);
+            if (!blocked && (axisName == "Horizontal" || axisName == "Vertical"))
+                MelonLogger.Msg($"[BloonsVR] Layer 1 INTERCEPT: GetAxis({axisName}) -> {__result}");
+            return blocked;
+        }
     }
 
     [HarmonyPatch(typeof(Input), "GetAxisRaw", new[] { typeof(string) })]
     internal static class BlockLegacyGetAxisRaw
     {
+        static BlockLegacyGetAxisRaw()
+            => MelonLogger.Msg("[BloonsVR] Layer 1: BlockLegacyGetAxisRaw patch class loaded");
+
         private static bool Prefix(string axisName, ref float __result)
-            => InputOverride.SuppressAxis(axisName, ref __result);
+        {
+            var blocked = InputOverride.SuppressAxis(axisName, ref __result);
+            if (!blocked && (axisName == "Horizontal" || axisName == "Vertical"))
+                MelonLogger.Msg($"[BloonsVR] Layer 1 INTERCEPT: GetAxisRaw({axisName}) -> {__result}");
+            return blocked;
+        }
     }
 
     /// <summary>Log only — we do not suppress, we just learn whether BTD6 uses GetButton.</summary>

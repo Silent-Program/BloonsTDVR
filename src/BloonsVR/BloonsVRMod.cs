@@ -1,5 +1,7 @@
 using BTD_Mod_Helper;
+using HarmonyLib;
 using Il2CppAssets.Scripts.Unity.UI_New.InGame;
+using Il2CppAssets.Scripts.Unity.UI_New.WorldInteractables;
 using MelonLoader;
 using UnityEngine;
 
@@ -9,7 +11,7 @@ namespace BloonsVR
     /// Mod entry point and per-frame orchestrator.
     ///
     /// There is no GameObject, no MonoBehaviour and no IMGUI in this mod. BTD6's IL2CPP build strips
-    /// <c>GameObject.AddComponent&lt;T&gt;()</c> entirely, so the usual "spawn a GameObject and drive it
+    /// <c>GameObject.AddComponent<T>()</c> entirely, so the usual "spawn a GameObject and drive it
     /// from Update()" pattern throws a TypeInitializationException before it ever runs. The tick comes
     /// from a managed coroutine instead — see <see cref="RigDriver"/>.
     ///
@@ -47,6 +49,9 @@ namespace BloonsVR
         /// <summary>Where the player is dropped when a rig is created.</summary>
         internal static Vector3 SpawnPoint { get; private set; } = new Vector3(0f, 5f, -20f);
 
+        /// <summary>The active player rig, for Harmony patches that run outside the mod's tick.</summary>
+        internal static PlayerRig Rig => _rig;
+
         public override void OnEarlyInitialize()
         {
             base.OnEarlyInitialize();
@@ -82,11 +87,17 @@ namespace BloonsVR
             var applied = new System.Collections.Generic.List<string>();
             var failed = new System.Collections.Generic.List<string>();
 
+            var patchTypes = new System.Collections.Generic.List<System.Type>();
             foreach (var type in assembly.GetTypes())
             {
-                if (type == null || !IsPatchTarget(type))
-                    continue;
+                if (type != null && IsPatchTarget(type))
+                    patchTypes.Add(type);
+            }
 
+            MelonLogger.Msg($"[BloonsVR] Harmony: found {patchTypes.Count} patch class(es) to apply");
+
+            foreach (var type in patchTypes)
+            {
                 try
                 {
                     harmony.CreateClassProcessor(type).Patch();
@@ -94,7 +105,6 @@ namespace BloonsVR
                 }
                 catch (System.Exception e)
                 {
-                    // The first line of e is the useful one; the rest is Harmony stack noise.
                     failed.Add($"{type.Name}: {e.Message.Split('\n')[0].Trim()}");
                 }
             }
@@ -399,6 +409,32 @@ namespace BloonsVR
 
             var centre = sum / count;
             return new Vector3(centre.x, centre.y + 12f, centre.z - 18f);
+        }
+    }
+
+    /// <summary>
+    /// Harmony postfix on WorldCameraController.LateUpdate.
+    ///
+    /// BTD6's Update() pins the Scene camera to orthographic (60,0,0) every frame.
+    /// WorldCameraController.LateUpdate runs AFTER Update, so writing our pose here wins.
+    /// This avoids creating our own camera (URP ignores it) and adding MonoBehaviours at runtime (IL2CPP fails).
+    /// </summary>
+    [HarmonyPatch(typeof(WorldCameraController), "LateUpdate")]
+    internal static class WorldCameraControllerLateUpdatePostfix
+    {
+        private static void Postfix(WorldCameraController __instance)
+        {
+            if (BloonsVRMod.Rig == null || !BloonsVRMod.Rig.IsActive)
+                return;
+
+            var rig = BloonsVRMod.Rig;
+            var camera = rig.RigCamera;
+            if (camera == null)
+                return;
+
+            var transform = camera.transform;
+            transform.position = rig.PlayerPosition + Vector3.up * PlayerRig.EyeHeight;
+            transform.rotation = Quaternion.Euler(rig.Pitch, rig.Yaw, 0f);
         }
     }
 }
