@@ -1,10 +1,12 @@
 using System.Collections.Generic;
 using Il2CppAssets.Scripts.Models;
-using Il2CppAssets.Scripts.Models.Map;
 using Il2CppAssets.Scripts.Models.Towers;
+using Il2CppAssets.Scripts.Models.Map;
+using MelonLoader;
 using MelonLogger = MelonLoader.MelonLogger;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using static UnityEngine.InputSystem.Key;
 
 namespace BloonsVR
 {
@@ -12,17 +14,9 @@ namespace BloonsVR
     /// Places towers by firing a ray out of the middle of the screen and asking BTD6's own
     /// <c>TowerManager.CreateTower</c> to build at the hit point.
     ///
-    /// Why not drive the mouse? BTD6's normal flow is
-    /// <c>InputManager.PrimeTower -&gt; EnterPlacementMode -&gt; cursorPositionWorld -&gt; TryPlace</c>, which
-    /// is hard-wired to the desktop cursor position. In first person (and later on a VR controller ray)
-    /// we have our own camera, so we resolve the target point ourselves and then apply the same area and
-    /// cash rules the game would have applied.
-    ///
-    /// There is no IMGUI overlay: IMGUI needs a MonoBehaviour to host OnGUI, and BTD6's IL2CPP build
-    /// strips AddComponent so we cannot host one. Status goes to the MelonLoader console instead, which
-    /// is where the log goes anyway.
-    ///
-    /// Hotkeys live in <see cref="Hotkeys"/> because BTD6 also binds keys; change them there.
+    /// V key toggles mouse lock/unlock (first person look on/off).
+    /// C cycles tower, F places tower.
+    /// No TAB functionality - V toggles mouse lock.
     /// </summary>
     public class TowerPlacer
     {
@@ -51,31 +45,22 @@ namespace BloonsVR
             ? $"{SelectedTowerId ?? "-"} at {_aimPoint} - {_status}"
             : $"{SelectedTowerId ?? "-"} - {_status}";
 
-        /// <summary>Runs once per frame. Handles the rig toggle, the aim ray and placement.</summary>
+        /// <summary>Runs once per frame. Handles mouse lock toggle, aim ray and placement.</summary>
         public void Tick()
         {
             if (_rig == null)
                 return;
 
-            // InputReader rather than Keyboard.current: see its comment for why the latter was returning
-            // false for every key while mouse look worked.
-            // The toggles have to be read before the IsActive check, otherwise turning first person off
-            // would leave nothing able to turn it back on.
+            // V key toggles mouse lock (first person look on/off)
             if (InputReader.PressedThisFrame(Hotkeys.ToggleRig))
             {
-                MelonLogger.Msg($"[BloonsVR] ToggleRig pressed! IsActive={_rig.IsActive}");
-                var turningOff = _rig.IsActive;
-                _rig.SetActive(!_rig.IsActive);
-                BloonsVRMod.SetUserDisabled(turningOff);
-                SetStatus(_rig.IsActive ? "first person on" : "first person off, BTD6 camera restored");
+                _rig.ToggleCursorLock();
                 return;
             }
 
-            if (InputReader.PressedThisFrame(Hotkeys.CursorToggle) && _rig.CursorLocked)
+            if (InputReader.PressedThisFrame(Hotkeys.CursorToggle))
             {
-                // Hand the cursor back without leaving first person, so the shop/upgrade menus stay
-                // clickable. C and F are ignored in that state so they cannot fire through BTD6's UI.
-                _rig.SetCursorLocked(false);
+                // Ignore TAB - V now handles mouse lock
                 return;
             }
 
@@ -93,20 +78,18 @@ namespace BloonsVR
 
             EnsureTowerList();
 
-            if (!_rig.CursorLocked)
-            {
-                // Cursor is free for clicking BTD6's menus. Keep aiming for the readout, but never place.
-                UpdateAim();
-                return;
-            }
-
+            // Always aim - even when mouse is unlocked (for reticle display)
             UpdateAim();
 
-            if (InputReader.PressedThisFrame(Hotkeys.CycleTower))
-                CycleTower();
+            // Only allow cycling/placing when mouse is locked (first person active)
+            if (!InputReader.PressedThisFrame(Hotkeys.CursorToggle) && _rig.CursorLocked)
+            {
+                if (InputReader.PressedThisFrame(Hotkeys.CycleTower))
+                    CycleTower();
 
-            if (InputReader.PressedThisFrame(Hotkeys.PlaceTower))
-                Place();
+                if (InputReader.PressedThisFrame(Hotkeys.PlaceTower))
+                    Place();
+            }
         }
 
         // ---------------------------------------------------------------- aim
@@ -135,7 +118,7 @@ namespace BloonsVR
             }
         }
 
-        // ------------------------------------------------------------ tower list
+        // ---------------------------------------------------------------- tower list
 
         /// <summary>
         /// Candidate base ids, taken from BTD6's own tower hotkey list in
@@ -148,145 +131,99 @@ namespace BloonsVR
             "DartMonkey", "BoomerangMonkey", "BombShooter", "TackShooter", "IceMonkey", "GlueGunner",
             "Desperado", "SniperMonkey", "MonkeySub", "MonkeyBuccaneer", "MonkeyAce", "HeliPilot",
             "MortarMonkey", "DartlingGunner", "WizardMonkey", "SuperMonkey", "NinjaMonkey", "Alchemist",
-            "Druid", "Mermonkey", "Skywarden", "BananaFarm", "SpikeFactory", "MonkeyVillage",
-            "EngineerMonkey", "BeastHandler",
+            "BananaFarm", "SpikeFactory", "MonkeyVillage", "EngineerMonkey", "BeastHandler", "Mermonkey",
+            "Skywarden", "DartlingGunner", "GlueGunner", "HeliPilot", "IceMonkey", "MonkeySub",
+            "MonkeyBuccaneer", "MonkeyAce", "MonkeyVillage", "MortarMonkey", "NinjaMonkey", "SniperMonkey",
+            "SpikeFactory", "SuperMonkey", "TackShooter", "WizardMonkey"
         };
 
         private void EnsureTowerList()
         {
+            if (_towerIds.Count > 0)
+                return;
+
             var model = Btd6Map.Model;
-            if (model == null || _towerIds.Count > 0)
+            if (model == null)
                 return;
 
             foreach (var id in CandidateTowerIds)
             {
                 var tower = model.GetTower(id);
-                if (tower == null || tower.tier != 0 || tower.isParagon || tower.IsSubEntity)
-                    continue;
-
-                if (tower.cost <= 0f || _towerIds.Contains(id))
-                    continue;
-
-                _towerIds.Add(id);
+                if (tower != null && tower.tier == 0 && !tower.isParagon)
+                    _towerIds.Add(id);
             }
-
-            _towerIds.Sort((a, b) => string.CompareOrdinal(NameOf(model, a), NameOf(model, b)));
-            _index = _towerIds.Count > 0 ? 0 : -1;
 
             MelonLogger.Msg($"[BloonsVR] placeable towers ({_towerIds.Count}): {string.Join(", ", _towerIds)}");
         }
 
-        private static string NameOf(GameModel model, string baseId)
-        {
-            try
-            {
-                return model.GetTower(baseId)?.name ?? baseId;
-            }
-            catch
-            {
-                return baseId;
-            }
-        }
+        // ---------------------------------------------------------------- placement
 
         private void CycleTower()
         {
             if (_towerIds.Count == 0)
-            {
-                SetStatus("no towers available (not in a match?)");
                 return;
-            }
 
             _index = (_index + 1) % _towerIds.Count;
             SetStatus($"selected {SelectedTowerId}");
         }
 
-        // ------------------------------------------------------------ placement
-
         private void Place()
         {
-            if (!_hasAim)
-            {
-                SetStatus("nothing under the reticle");
+            if (!_hasAim || _index < 0 || _index >= _towerIds.Count)
                 return;
-            }
 
             var model = Btd6Map.Model;
-            if (model == null)
+            if (model == null || model.map == null)
+                return;
+
+            var towerModel = model.GetTower(_towerIds[_index]);
+            if (towerModel == null)
+                return;
+
+            var areaModel = Btd6Map.FindPlaceableArea(new Vector2(_aimPoint.x, _aimPoint.z));
+            var areaId = areaModel.id;
+            if (areaModel == null)
             {
-                SetStatus("no game model");
+                MelonLogger.Warning($"[BloonsVR] no placeable area at {_aimPoint}");
                 return;
             }
 
-            var towerManager = Btd6Map.TowerManager;
+            var towerManager = BTD_Mod_Helper.Api.Helpers.Instances.TowerManager;
             if (towerManager == null)
             {
-                SetStatus("map still loading");
+                MelonLogger.Error("[BloonsVR] TowerManager not available");
                 return;
             }
 
-            var baseId = SelectedTowerId;
-            if (baseId == null)
-            {
-                SetStatus("press C to pick a tower");
-                return;
-            }
-
-            var tower = model.GetTower(baseId);
-            if (tower == null)
-            {
-                SetStatus($"unknown tower {baseId}");
-                return;
-            }
-
-            var point = _aimPoint;
-            var xz = new Vector2(point.x, point.z);
-
-            AreaModel area = Btd6Map.FindPlaceableArea(xz);
-            if (area == null)
-            {
-                SetStatus($"cannot build on {xz}");
-                return;
-            }
-
-            if (model.cash < tower.cost)
-            {
-                SetStatus($"not enough cash ({model.cash:0} < {tower.cost:0})");
-                return;
-            }
+            var pos = Btd6Map.ToBtd3(_aimPoint);
+            pos.y = Btd6Map.GroundHeight(_aimPoint, _aimPoint.y + 10f, -20f);
 
             try
             {
-                // areaPlacedOn plus area.height are what make BTD6 happy: the game validates a tower
-                // against the area it belongs to, not against raw XZ.
-                var position = new Vector3(point.x, area.height, point.z);
-                var placed = towerManager.CreateTower(tower, Btd6Map.ToBtd3(position), 0, area.id, default,
-                    deductCash: true, playPlacementEffects: true);
+                var tower = towerManager.CreateTower(
+                    towerModel, pos, 0, areaId, default,
+                    null, false, true, 0f, true, -1, -1);
 
-                if (placed == null)
+                if (tower != null)
                 {
-                    SetStatus($"game refused {tower.name}");
-                    MelonLogger.Warning($"[BloonsVR] CreateTower returned null for {tower.name} at {position}");
+                    MelonLogger.Msg($"[BloonsVR] placed {towerModel.baseId} at {pos}");
+                    SetStatus($"placed {towerModel.baseId}");
                 }
                 else
                 {
-                    SetStatus($"placed {tower.name}");
-                    MelonLogger.Msg($"[BloonsVR] placed {tower.name} ({baseId}) at {position} on area {area.id}");
+                    MelonLogger.Warning("[BloonsVR] CreateTower returned null");
                 }
             }
             catch (System.Exception e)
             {
-                SetStatus("placement failed");
-                MelonLogger.Error($"[BloonsVR] CreateTower threw: {e}");
+                MelonLogger.Error($"[BloonsVR] placement failed: {e.Message}");
             }
         }
 
         private void SetStatus(string status)
         {
-            if (_status == status)
-                return;
-
             _status = status;
-            MelonLogger.Msg($"[BloonsVR] {_status}");
+            MelonLogger.Msg($"[BloonsVR] {status}");
         }
     }
 }

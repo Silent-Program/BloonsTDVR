@@ -7,14 +7,9 @@ using static UnityEngine.InputSystem.Key;
 namespace BloonsVR
 {
     /// <summary>
-    /// First-person rig: player state in managed code, projected onto BTD6's Scene camera.
-    ///
-    /// We DON'T create a camera. BTD6's Scene camera IS rendered by URP (proven by RenderProbe).
-    /// We take its transform in a Harmony postfix on WorldCameraController.LateUpdate,
-    /// which runs AFTER BTD6's Update pins it to (60,0,0). We win the transform fight.
-    /// V toggles our control on/off.
-    ///
-    /// Movement writes a plain position. Ground height from Btd6Map.GroundHeight.
+    /// First-person rig: always in first-person mode.
+    /// V key toggles mouse lock/unlock.
+    /// No view switching - always first person.
     /// </summary>
     public class PlayerRig
     {
@@ -43,18 +38,25 @@ namespace BloonsVR
         private float _pitch;
         private bool _spawned;
 
+        /// <summary>The camera the rig is driving (BTD6's Scene camera).</summary>
         public Camera RigCamera => _sceneCamera;
 
-        public bool IsActive { get; private set; }
+        /// <summary>Always true - we're always in first person mode.</summary>
+        public bool IsActive => true;
 
-        public bool CursorLocked { get; private set; } = true;
+        /// <summary>True when mouse is locked for first person look.</summary>
+        public bool CursorLocked { get; private set; } = false;
 
+        /// <summary>Where the player is standing, in world space.</summary>
         public Vector3 PlayerPosition => _playerPosition;
 
+        /// <summary>Head yaw in degrees.</summary>
         public float Yaw => _yaw;
 
+        /// <summary>Head pitch in degrees.</summary>
         public float Pitch => _pitch;
 
+        /// <summary>Initialize the rig with BTD6's scene camera.</summary>
         public bool Initialise(InGame inGame)
         {
             _inGame = inGame;
@@ -66,7 +68,7 @@ namespace BloonsVR
                 return false;
             }
 
-            // Store BTD6's original camera state so we can restore it on V.
+            // Store BTD6's original camera state (just in case we need it).
             StoreCameraState();
 
             // Configure for first person: perspective, FOV 70, clear to dark.
@@ -76,11 +78,11 @@ namespace BloonsVR
             _sceneCamera.farClipPlane = 5000f;
             _sceneCamera.clearFlags = CameraClearFlags.SolidColor;
             _sceneCamera.backgroundColor = new Color(0.05f, 0.06f, 0.09f, 1f);
-            _sceneCamera.depth = 100f; // draw last (though it's the only one URP renders)
+            _sceneCamera.depth = 100f;
             _sceneCamera.rect = new Rect(0f, 0f, 1f, 1f);
 
-            IsActive = false; // Start in BTD6 view
-            LockCursor(false); // Start with cursor unlocked for BTD6 menus
+            CursorLocked = false; // Start with cursor unlocked
+            LockCursor(false);
 
             MelonLogger.Msg($"[BloonsVR] rig created using Scene camera: {Describe(_sceneCamera)}");
             return true;
@@ -118,51 +120,20 @@ namespace BloonsVR
             MelonLogger.Msg("[BloonsVR] Scene camera state restored");
         }
 
-        public void SetActive(bool active)
+        /// <summary>Toggle mouse lock/unlock for first person look.</summary>
+        public void ToggleCursorLock()
         {
-            if (IsActive == active) return;
-
-            IsActive = active;
-
-            if (active)
-            {
-                // Re-apply first-person settings
-                if (_sceneCamera != null)
-                {
-                    _sceneCamera.orthographic = false;
-                    _sceneCamera.fieldOfView = 70f;
-                    _sceneCamera.nearClipPlane = 0.05f;
-                    _sceneCamera.farClipPlane = 5000f;
-                    _sceneCamera.clearFlags = CameraClearFlags.SolidColor;
-                    _sceneCamera.backgroundColor = new Color(0.05f, 0.06f, 0.09f, 1f);
-                    _sceneCamera.depth = 100f;
-                    _sceneCamera.rect = new Rect(0f, 0f, 1f, 1f);
-                }
-                LockCursor(false); // Start with cursor unlocked for BTD6 menus
-                MelonLogger.Msg("[BloonsVR] first person ON - controlling Scene camera");
-            }
-            else
-            {
-                RestoreCameraState();
-                LockCursor(false);
-                MelonLogger.Msg("[BloonsVR] first person OFF - Scene camera restored");
-            }
+            CursorLocked = !CursorLocked;
+            LockCursor(CursorLocked);
+            MelonLogger.Msg(CursorLocked
+                ? "[BloonsVR] mouse locked - first person look active"
+                : "[BloonsVR] mouse unlocked - click BTD6 menus, V to re-lock");
         }
 
         public void LockCursor(bool locked)
         {
             Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
             Cursor.visible = !locked;
-        }
-
-        public void SetCursorLocked(bool locked)
-        {
-            if (CursorLocked == locked) return;
-            CursorLocked = locked;
-            LockCursor(locked);
-            MelonLogger.Msg(locked
-                ? "[BloonsVR] cursor locked - mouse look active"
-                : "[BloonsVR] cursor released - click BTD6 menus, TAB to re-lock");
         }
 
         public void Teleport(Vector3 position, float yaw)
@@ -175,19 +146,22 @@ namespace BloonsVR
 
         public void Tick()
         {
-            if (!IsActive || _sceneCamera == null) return;
+            if (_sceneCamera == null) return;
 
             if (!_spawned)
                 Teleport(BloonsVRMod.SpawnPoint, 0f);
 
-            // --- Look ------------------------------------------------------------
-            var mouse = CursorLocked ? Mouse.current : null;
-            if (mouse != null)
+            // --- Look (only when mouse is locked) ---
+            if (CursorLocked)
             {
-                var delta = mouse.delta.ReadValue();
-                _yaw += delta.x * MouseSensitivity * 0.05f;
-                _pitch -= delta.y * MouseSensitivity * 0.05f;
-                _pitch = Mathf.Clamp(_pitch, -89f, 89f);
+                var mouse = Mouse.current;
+                if (mouse != null)
+                {
+                    var delta = mouse.delta.ReadValue();
+                    _yaw += delta.x * MouseSensitivity * 0.05f;
+                    _pitch -= delta.y * MouseSensitivity * 0.05f;
+                    _pitch = Mathf.Clamp(_pitch, -89f, 89f);
+                }
             }
 
             // --- Move ------------------------------------------------------------
@@ -201,7 +175,8 @@ namespace BloonsVR
 
             var rotation = Quaternion.Euler(0f, _yaw, 0f);
             var move = rotation * Vector3.forward * forward + rotation * Vector3.right * strafe;
-            if (move.sqrMagnitude > 1f) move.Normalize();
+            if (move.sqrMagnitude > 1f)
+                move.Normalize();
 
             float speed = InputReader.Held(Key.LeftShift) ? SprintSpeed : WalkSpeed;
             var position = _playerPosition + move * (speed * Time.deltaTime);
@@ -218,15 +193,27 @@ namespace BloonsVR
 
             _playerPosition = position;
 
-            // NOTE: Camera transform is applied in WorldCameraControllerLateUpdatePostfix (Harmony),
-            // not here. This Tick only computes the pose.
+            // --- Drive the camera (InGame.Update postfix handles transform) ---
+            if (_sceneCamera != null)
+            {
+                ApplyRenderOwnership();
+            }
+        }
+
+        /// <summary>Ensure our camera owns the full frame.</summary>
+        private void ApplyRenderOwnership()
+        {
+            if (_sceneCamera == null) return;
+
+            _sceneCamera.rect = new Rect(0f, 0f, 1f, 1f);
+            _sceneCamera.depth = 100f;
         }
 
         public void Shutdown()
         {
-            if (IsActive) RestoreCameraState();
-            IsActive = false;
-            CursorLocked = true;
+            // We don't restore camera state - we just unlock cursor and stop updating
+            CursorLocked = false;
+            LockCursor(false);
         }
 
         internal static string Describe(Camera camera)

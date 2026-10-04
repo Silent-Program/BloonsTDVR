@@ -8,7 +8,7 @@ namespace BloonsVR
     /// </summary>
     public static class Hotkeys
     {
-        /// <summary>Leave first person and hand the camera back to BTD6.</summary>
+        /// <summary>Toggle mouse lock/unlock (first person look).</summary>
         public const UnityEngine.InputSystem.Key ToggleRig = UnityEngine.InputSystem.Key.V;
 
         /// <summary>Cycle to the next tower in the placement list.</summary>
@@ -23,10 +23,7 @@ namespace BloonsVR
         /// <summary>Temporary drop while held (Q/E in the rig).</summary>
         public const UnityEngine.InputSystem.Key Down = UnityEngine.InputSystem.Key.Q;
 
-        /// <summary>
-        /// Release or re-grab the mouse cursor without leaving first person. This is what lets the player
-        /// click BTD6's shop, upgrade and hero menus; the on-screen button does the same thing.
-        /// </summary>
+        /// <summary>Unused - was cursor toggle, now V handles this.</summary>
         public const UnityEngine.InputSystem.Key CursorToggle = UnityEngine.InputSystem.Key.Tab;
 
         /// <summary>Turn every 2D sprite so it faces the player.</summary>

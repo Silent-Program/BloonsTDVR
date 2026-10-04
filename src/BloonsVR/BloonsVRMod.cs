@@ -43,8 +43,7 @@ namespace BloonsVR
         internal static void SetUserDisabled(bool value)
         {
             _userDisabled = value;
-            if (value && _rig != null)
-                _rig.SetActive(false);
+            // No SetActive anymore - we just track user preference
         }
 
         /// <summary>Where the player is dropped when a rig is created.</summary>
@@ -56,8 +55,8 @@ namespace BloonsVR
         public override void OnEarlyInitialize()
         {
             base.OnEarlyInitialize();
-            MelonLogger.Msg("[BloonsVR] loaded. V = first person, WASD = move, TAB = cursor, B = billboards, C = tower, F = place.");
-            CursorButton.OnToggleRequested = () => _rig?.SetCursorLocked(!_rig.CursorLocked);
+            MelonLogger.Msg("[BloonsVR] loaded. V = toggle mouse lock, WASD = move, C = tower, F = place, B = billboards.");
+            CursorButton.OnToggleRequested = () => _rig?.ToggleCursorLock();
         }
 
         /// <summary>
@@ -269,8 +268,7 @@ namespace BloonsVR
 
             if (_userDisabled)
             {
-                // Rebuild it, but respect the player's decision to be out of first person.
-                rig.SetActive(false);
+                // No SetActive - we just track user preference
                 MelonLogger.Msg("[BloonsVR] rig rebuilt but left off (player had pressed V)");
             }
 
