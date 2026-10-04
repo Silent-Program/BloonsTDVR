@@ -222,3 +222,53 @@ If improving this template:
 2. Test with a fresh clone
 3. PR to `main` with updated version tag
 4. Document breaking changes in `CHANGELOG.md`
+
+---
+
+## 🔴 KEEP THIS TEMPLATE REPO UPDATED — Critical
+
+**This repo (`UniversalModderPriv`) is the source of truth.** Every mod project clones from it. If you improve the workflow, fix a script, update the plan template, or add a new tool — **update this repo first**, then propagate to downstream projects.
+
+### Update Flow
+```
+1. Make change in THIS repo (UniversalModderPriv)
+   → plan/template-update-<slug> branch → PR → main
+
+2. Tag the release
+   git tag -a v1.1.0 -m "Template: added mod-utils.sh, fixed PR template"
+
+3. In EACH downstream mod project:
+   cd my-mod-project
+   git remote add template git@github.com:Silent-Program/UniversalModderPriv.git
+   git fetch template
+   git merge template/main --allow-unrelated-histories  # or rebase
+   # Resolve conflicts, test, commit
+```
+
+### What to Watch For
+- **`AGENTS.md`** — Workflow changes, new rules, updated commands
+- **`scripts/`** — New helpers (`mod-utils.sh`, `sync-games.sh`, etc.)
+- **`plans/template.md`** — Better structure, new fields
+- **`.github/pull_request_template.md`** — New validation steps
+- **`configs/tools.toml`** — New tools, version bumps (universal-modder, xEdit, etc.)
+- **Submodule updates** — `tools/universal-modder` version bumps
+
+### Propagation Script (Add to `scripts/sync-template.sh`)
+```bash
+#!/usr/bin/env bash
+# Run in each downstream mod project to pull template updates
+git fetch template
+git merge template/main --no-edit -m "chore(template): sync from UniversalModderPriv@$(git rev-parse template/main)"
+git submodule update --init --recursive
+```
+
+### Agent Rule
+> **Before starting any new mod project:** Verify the template is current. If `UniversalModderPriv` has newer commits than your project's `template` remote, **sync first** — don't rediscover solved problems.
+
+### Version Tagging
+Tag template releases semantically:
+- `v1.0.0` — Initial stable template
+- `v1.1.0` — New scripts, non-breaking workflow tweaks
+- `v2.0.0` — Breaking changes (e.g., plan format change, config restructure)
+
+Downstream projects can then `git merge template/v1.1.0` selectively.
