@@ -63,6 +63,7 @@ namespace BloonsVR
             // would leave nothing able to turn it back on.
             if (InputReader.PressedThisFrame(Hotkeys.ToggleRig))
             {
+                MelonLogger.Msg($"[BloonsVR] ToggleRig pressed! IsActive={_rig.IsActive}");
                 var turningOff = _rig.IsActive;
                 _rig.SetActive(!_rig.IsActive);
                 BloonsVRMod.SetUserDisabled(turningOff);

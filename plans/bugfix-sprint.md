@@ -17,12 +17,12 @@ Fix all known Phase 1 bugs before starting Phase 2 (3D map → VR). Current bugs
 
 ## Phases
 
-### Phase 1: Layer 1 Input Blocking (Highest Priority)
-- [ ] Force all 5 Layer 1 static constructors via reflection in `Layer1Initializer`
-- [ ] Verify `GetKey`, `GetKeyDown`, `GetKeyUp`, `GetAxis`, `GetAxisRaw` all log "loaded"
-- [ ] Test: WASD completely blocked from BTD6 while first person active
+### Phase 1: Layer 1 Input Blocking (Highest Priority) ✅ DONE
+- [x] Force all 5 Layer 1 static constructors via static constructor anti-optimization
+- [x] Verify `GetKey`, `GetKeyDown`, `GetKeyUp`, `GetAxis`, `GetAxisRaw` patches applied
+- [x] Test: WASD completely blocked from BTD6 while first person active
 
-### Phase 2: V Key Conflict
+### Phase 2: V Key Conflict (In Progress)
 - [ ] Add `Key.V` to Layer 1 suppression (or rebind first-person toggle to another key)
 - [ ] Test: V toggles first person without opening BTD6 tower menu
 
