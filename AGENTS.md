@@ -6,6 +6,27 @@ movement plus screen-centre raycast tower placement now, VR and controller UI ne
 **Read `MODLOG.md` before changing anything.** It holds the verified API surface, the gotchas
 already paid for, and the open questions. This file is the short version.
 
+---
+
+## Workflow Rules (from UniversalModderPriv template)
+
+### Branch Discipline
+- **No direct commits to `main`** — create a plan branch first (`plan/<short-slug>`).
+- **All merges to `main` via PR** — no fast-forward, no direct push. Require user approval.
+- Delete branch after merge.
+
+### Commit Rules
+- One logical change per commit (atomic, revertible).
+- Commit messages: `<type>(<scope>): <imperative summary>` + body (what & why).
+- Types: `feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `plan`.
+
+### Universal Modder Integration
+- Primary tool for game modding: `universal-modder` (from `tools/universal-modder/` submodule).
+- Use for: file patching, archive handling, format conversion, mod packaging, deployment.
+- Verify `universal-modder --version` matches `configs/tools.toml` before executing.
+
+---
+
 ## Layout
 
 - `src/BloonsVR/` — the mod:
@@ -24,8 +45,12 @@ already paid for, and the open questions. This file is the short version.
   - `Btd6Map.cs` — defensive helpers over `GameModel` / `MapModel.areas` / `AreaModel`.
   - `Hotkeys.cs` — rebindable keys, because BTD6 also binds keys.
 - `tools/font_preview.py` — renders the font glyphs to a PNG so they can be eyeballed.
-- `universal-modder/` — vendored agent toolkit, **gitignored**. Not part of this project.
+- `tools/universal-modder/` — Universal Modder submodule (not gitignored).
 - `MODLOG.md` — the journal. Update it with every change and every new finding.
+- `configs/games.toml` — game install paths (BTD6 registered here).
+- `configs/tools.toml` — tool versions (universal-modder pinned).
+
+---
 
 ## Commands
 
@@ -38,13 +63,13 @@ dotnet build -c Release     # equivalent, no deploy
 
 The game does **not** need a rebuild; drop the DLL in `Mods\` and start BTD6.
 
-`universal-modder\bin\um` is a bash script and will not run in PowerShell. Use:
-
 ```powershell
 uv run --quiet --project C:\Users\think\Documents\BloonsVR\universal-modder python -m um <args>
 ```
 
 Useful: `scan "BloonsTD6"`, `backup create`, `backup restore`, `win shot`, `kb search`.
+
+---
 
 ## Read the game before guessing at its API
 
@@ -62,6 +87,8 @@ ilspycmd -t "Il2CppAssets.Scripts.Models.Map.AreaModel" -o out $asm      # one t
 - Bodies are stubs; only signatures and constants are real. That is usually enough.
 - `Mods\Btd6ModHelper.xml` (1 MB) documents the whole mod-helper API — read it, don't guess.
 
+---
+
 ## Environment (verified — do not re-derive)
 
 | | |
@@ -78,6 +105,8 @@ ilspycmd -t "Il2CppAssets.Scripts.Models.Map.AreaModel" -o out $asm      # one t
 
 **`Btd6ModHelper.dll` must stay in `Mods\`.** Without it BTD6 does not save progress.
 
+---
+
 ## Traps that will cost you an hour each
 
 1. **Only the *generic* `GameObject.AddComponent<T>()` is stripped. The `Il2CppSystem.Type` overload
@@ -91,39 +120,53 @@ ilspycmd -t "Il2CppAssets.Scripts.Models.Map.AreaModel" -o out $asm      # one t
    The same applies to every other generic Unity API. **Check the generated wrapper before assuming
    something is gone** — `ilspycmd -l c "...\UnityEngine.CoreModule.dll"`. An earlier version of this file
    claimed nothing could be added to the scene at all; that was wrong and cost real time.
+
 2. **Use `BloonsTD6Mod.OnUpdate()` as the per-frame hook.** MelonLoader 0.7's `MelonMod` genuinely has no
    per-frame callback, but BTD6 Mod Helper adds `OnUpdate()` itself and other BTD6 mods drive off it.
    A Harmony postfix on a Unity message method (`InGame.Update`) applies without error and **never fires** —
    Unity dispatches messages from a generated table, not IL2CPP's method table.
+
 3. **Namespace prefixes differ by assembly.** Game types: `Assets.Scripts.X` →
    `Il2CppAssets.Scripts.X`. Unity modules keep their original names (`UnityEngine.Camera`,
    `UnityEngine.InputSystem.Keyboard`). Do not assume either way.
+
 4. **BTD6 has its own vector types.** Simulation APIs take
    `Il2CppAssets.Scripts.Simulation.SMath.Vector2/Vector3`, **not** `UnityEngine.Vector2/Vector3`.
    `SMath.Vector2` is `(x, z)`. The decompiled source reads as plain `Vector2`; only the compiler
    reveals the truth. Use `Btd6Map.ToBtd2` / `ToBtd3`.
+
 5. **`GameModel` is not an `IEnumerable<TowerModel>` in the managed sense.** It only *looks* like one;
    Il2CppInterop exposes it as the mangled method `System_Collections_Generic_IEnumerable_..._GetEnumerator`
    returning an Il2Cpp enumerator. Casting throws `InvalidCastException`. Resolve towers via
    `GameModel.GetTower(baseId)` instead — `TowerPlacer` keeps a curated id list for that.
+
 6. **`Il2Cppmscorlib.dll` and `Unity.InputSystem.dll` live in `MelonLoader\Il2CppAssemblies\`,**
    not `MelonLoader\net6\`.
+
 7. **BTD6 uses the new Input System.** Use `Keyboard.current` / `Mouse.current`;
    `UnityEngine.Input` will likely throw.
+
 8. **No font is obtainable at runtime.** `Resources.GetBuiltinResource<T>` is a stripped generic and
    TMP exposes no static font asset, so `PixelFont` renders text into a `Texture2D` by hand. Verify any
    change to the glyphs with `tools/font_preview.py` (renders a PNG you can look at).
+
 9. **`Mesh.vertices` and friends do not exist** — only `NativeArray` generics plus `List<T>` overloads.
    Use `GameObject.CreatePrimitive(PrimitiveType.Sphere)` for geometry instead of building meshes.
+
 10. **`MelonInfoAttribute(type, name, version, author)`** — version comes third.
+
 11. **`BloonsMod.ApplyHarmonyPatches(Type)` swallows its own exceptions**, so it cannot be used to
     detect patch failure. Construct `new Harmony(id).CreateClassProcessor(t).Patch()` yourself.
+
 12. **`BloonsMod.OnEarlyInitializeMelon` is sealed.** Override `OnEarlyInitialize`.
+
 13. **After deploying, check the hash** — `.\build.ps1 -Deploy` piped through
     `Select-Object -First N` aborts the copy silently:
     ```powershell
     (Get-FileHash "<BTD6>\Mods\BloonsVR.dll").Hash -eq (Get-FileHash .\bin\Release\BloonsVR.dll).Hash
     ```
+
+---
 
 ## How placement works, and why
 
@@ -140,6 +183,8 @@ its validation — see `MODLOG.md`.
 Map queries go through `BTD_Mod_Helper.Api.Helpers.Instances`
 (`CurrentGameModel`, `TowerManager`, `InputManager`, `InGame`, `Map`). `TowerManager` and
 `InputManager` are not Unity singletons — do not look for `Instance`.
+
+---
 
 ## Camera
 
@@ -161,18 +206,14 @@ transform), and `Camera.main` is sometimes null. Never assume they are the same 
 and `FindObjectsOfType<T>` / `Resources.FindObjectsOfTypeAll<T>` are stripped generics. A camera can only
 be *found* via `Camera.main` or `InGame.instance.sceneCamera`, never listed.
 
-### Do not disable BTD6's cameras. Use `Camera.rect` viewports
+### Do not disable BTD6's cameras
 
 Disabling BTD6's camera was tried twice and failed both times. What you get is not an error — it is a
 **frozen picture while the simulation keeps running**, because the back buffer retains the last frame
 Unity actually drew. `allCamerasCount = 1` (just ours) alongside an unchanged on-screen view is the
 signature. `URP renderer index -1` is *not* the bug: `-1` is URP's "use the pipeline default" sentinel.
 
-So both cameras render, and `ApplyViewports()` runs **every frame**, idempotently, setting
-`camera.rect` on `Camera.main` and `InGame.sceneCamera`. BTD6 keeps the left half at its normal top-down
-framing; first person gets the right half. Per-frame is not paranoia: BTD6 creates its real match camera
-*after* the rig is built, so any one-shot capture misses it. Earlier `SwitchOffBtdCameras(null)` also
-began with `_btdCameras.Clear()`, so a null argument silently emptied the list the viewport code iterated.
+Both cameras render; ours is full-screen at `depth = 100` and clears over the top. `V` toggles between the two views.
 
 **Rule: hook the render loop before theorising.** `RenderProbe.cs` is a Harmony postfix on
 `UniversalRenderPipeline.Render`, logging which cameras Unity is actually asked to draw. BTD6 uses the stock
@@ -189,41 +230,20 @@ Two traps in that probe, both already paid for:
 - **BTD6's match camera is orthographic**: `Scene`, `fov=15`, `depth=5`, `rot=(60,0,0)`. Our depth 100
   draws after it, which is all a full-screen override needs.
 
-### Never disable BTD6's camera — and never assume the keyboard is broken
+---
 
-Disabling BTD6's camera was tried and is a dead end: it leaves a frame with nothing drawing in it, which
-reads as a frozen screen while the simulation keeps running. `allCamerasCount = 1` (just ours) alongside an
-unchanged on-screen view is the signature. Both cameras render; ours is full-screen at `depth = 100` and
-clears over the top. `V` toggles between the two views.
-
-**Check the working control before believing a null.** Two runs were lost concluding the keyboard was dead
-or the wrong device, because `Keyboard.current` was non-null and that was treated as evidence. It is not.
-`V` is read by the same `InputReader`, through the same device indexer, as `Held(Key.W)` — and `V` worked.
-A hotkey that fires on the same path as the one that does not is proof the path is fine.
-
-So `InputReader` counts **cumulative frames per key** (`held=W123/A0/S0/D0`), not just a per-heartbeat
-snapshot: "never pressed" and "the sample missed it" are identical in a snapshot, and a counter cannot be
-fooled. `LogDeviceDiagnostics` dumps `InputSettings.updateMode` and every device's `enabled` / `added` /
-`deviceId`.
-
-## UI and input
-
-- No IMGUI: it needs a MonoBehaviour to host `OnGUI`. `CursorButton` uses uGUI instead (Canvas +
-  Image + RawImage, no GraphicRaycaster, so it cannot intercept BTD6's own clicks) with its own hit
-  test. While the cursor is locked the pointer is the screen centre, so the button is clickable
-  without ever releasing the cursor first.
-- **TAB** releases/re-grabs the cursor without leaving first person; mouse look is suppressed while it
-  is released so clicking the shop does not swing the camera. `C` and `F` are ignored while released.
 ## Input
 
 - **BTD6 runs both Unity input backends at once** and reads through each: legacy `Input.GetKey` returns
   real states without throwing *and* `Keyboard.current` is non-null with live keys. **Hitting one backend
   proves nothing** — BindingOfBloons logged `GetKey(W) hidden from BTD6 (patch active)` and hotkeys still
   fired. Only the symptom disappearing is evidence.
+
 - **The consumer must read the raw device** (`InputSystem.devices` / `Keyboard.current`) — never legacy
   `GetKey`, never an `InputAction`. `InputReader` follows this and has **no legacy fallback**, because
   Layer 1 prefixes those exact getters and a legacy fallback would starve us as well as BTD6.
-- Never poll `Keyboard.current` alone either: it returned false for every movement key while
+
+- **Never poll `Keyboard.current` alone**: it returned false for every movement key while
   `Mouse.current` worked, so the player could not walk. Read through `InputReader`, which asks every
   keyboard in `InputSystem.devices`. Heartbeat prints `keys=[kb=N W0 A0 S0 D0]` — read that first.
   **That snapshot samples one frame per heartbeat and has now lied three times.** Read it only beside the
@@ -234,6 +254,7 @@ fooled. `LogDeviceDiagnostics` dumps `InputSettings.updateMode` and every device
   - The real control is a *working hotkey on the same code path*. `V` goes through
     `InputReader.PressedThisFrame`, the same device indexer as `Held(Key.W)`; `V` firing while `W` read 0
     proved the path good and the theory wrong. `Keyboard.current` being non-null is not evidence.
+
 - `InputOverride` is three layers, all scoped to "rig active and cursor locked":
   1. **Legacy Harmony prefixes** on `GetKey`/`GetKeyDown`/`GetKeyUp`/`GetAxis`/`GetAxisRaw`, plus a
      log-only `GetButton` probe. **`new[] { typeof(KeyCode) }` is mandatory** — `GetKey` is overloaded on
@@ -246,6 +267,7 @@ fooled. `LogDeviceDiagnostics` dumps `InputSettings.updateMode` and every device
      frame and **rescanned every 60 frames**. That call returns an **Il2Cpp list**: iterate with `var`,
      never assign to a `System.Collections.Generic.List`. The scan must repeat — it saw only 10 enabled
      actions and BTD6 enables more maps mid-match, so a one-shot scan misses every later map.
+
 - **Never use `Harmony.PatchAll`.** It walks the assembly and **throws part way through**, so every class
   it had not reached stays unpatched, silently. A name-only patch on the overridden
   `UniversalRenderPipeline.Render` aborted the run and took the legacy `Input.GetKey` prefixes with it —
@@ -253,10 +275,25 @@ fooled. `LogDeviceDiagnostics` dumps `InputSettings.updateMode` and every device
   `assembly.GetTypes()`, patch each `[HarmonyPatch]` class in its own try/catch, and **log every class
   applied by name**. The only evidence Layer 1 was live was a log line that never appeared; an absent log
   line is not evidence.
+
 - Harmony patches register in `OnApplicationStart` — `OnInitializeMelon` is sealed on `BloonsMod`. Use
   your own `Harmony` instance; BTD6 Mod Helper's `ApplyHarmonyPatches` swallows its own exceptions.
+
 - Heartbeat reports `btdInput=blocked(N held, M enabled)`. **`LEAKED` means BTD6 re-enabled an action we
   held.** `M` climbing while `N` stays flat means BTD6 enabled a map the rescan has not reached yet.
+
+---
+
+## UI and input
+
+- No IMGUI: it needs a MonoBehaviour to host `OnGUI`. `CursorButton` uses uGUI instead (Canvas +
+  Image + RawImage, no GraphicRaycaster, so it cannot intercept BTD6's own clicks) with its own hit
+  test. While the cursor is locked the pointer is the screen centre, so the button is clickable
+  without ever releasing the cursor first.
+- **TAB** releases/re-grabs the cursor without leaving first person; mouse look is suppressed while it
+  is released so clicking the shop does not swing the camera. `C` and `F` are ignored while released.
+
+---
 
 ## Sprites
 
@@ -278,6 +315,8 @@ more Harmony hooks to `UnityDisplayNode` hoping to catch the ordering: `SetQuate
 entirely. Start from `Assets.Scripts.Simulation.Display.DisplayNode` / `IDisplayNode` (the sim→display
 bridge) or `Assets.Scripts.Unity.Display.Scene`, which owns the `Factory` and a per-frame `position`.
 
+---
+
 ## VR (phase 2, not started)
 
 The active OpenXR runtime is **Oculus** (`C:\Program Files\Oculus\Support\oculus-runtime\`), so
@@ -287,7 +326,9 @@ P/Invoke to OpenXR from the mod and render the rig camera into two eye `RenderTe
 `NewUnityModder/UnityVRMod` is a working IL2CPP reference implementation (BepInEx, DX11 only).
 BTD6 ships a `D3D12\` folder, so force `-force-d3d11` for any DX11-only native VR layer.
 
-## Working rules (from `universal-modder`)
+---
+
+## Working rules
 
 - Keep `MODLOG.md` current. It becomes the knowledge-base field note at the end.
 - `um backup create` before any launch that touches saves or profile data.

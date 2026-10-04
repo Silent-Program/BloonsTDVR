@@ -1,0 +1,3 @@
+[submodule "tools/universal-modder"]
+	path = tools/universal-modder
+	url = https://github.com/rehan-remade/universal-modder.git
