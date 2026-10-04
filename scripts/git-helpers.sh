@@ -161,13 +161,13 @@ validate_plan() {
     log_info "Plan status: $status"
 }
 
-# open_pr: Push branch and open PR creation URL
+# open_pr: Push branch and open PR creation URL with version tag
 # DESCRIPTION:
-#   Validates plan, pushes current branch to origin, generates GitHub compare URL,
-#   and attempts to open browser. Requires PR template to be filled manually.
+#   Validates plan, runs version_bump if not done, pushes branch, generates PR URL
+#   with conventional title including version, opens browser.
 # USE CASES:
-#   - After implementing plan: open_pr
-#   - Automates: git push -u origin + PR URL generation
+#   - After implementing plan: open_pr (auto-runs version_bump if needed)
+#   - Automates: version bump → git push → PR URL with title
 #   - Works with GitHub, GitLab (adjust URL pattern)
 # PRE-REQS: validate_plan passes, branch is plan/*
 open_pr() {
@@ -179,16 +179,29 @@ open_pr() {
 
     validate_plan || return 1
 
+    # Check for version bump
+    if [[ ! -f .git/pr_version ]]; then
+        log_info "No version bump selected. Running version_bump..."
+        version_bump || return 1
+    fi
+    local pr_version=$(cat .git/pr_version)
+
+    # Generate PR title
+    local plan_id=$(ls plans/PLAN-*-${current_branch#plan/}.md 2>/dev/null | head -1 | xargs basename | sed 's/.md$//')
+    local pr_title=$(generate_pr_title "$plan_id")
+
     # Push branch
     log_info "Pushing branch: $current_branch"
     git push -u origin "$current_branch"
 
-    # Generate PR URL (GitHub)
+    # Generate PR URL with title and body (GitHub)
     local remote_url=$(git remote get-url origin)
     local repo_path=$(echo "$remote_url" | sed -E 's/.*[:/]([^/]+\/[^/]+)(\.git)?$/\1/')
-    local pr_url="https://github.com/${repo_path}/compare/main...${current_branch}?expand=1"
+    local pr_url="https://github.com/${repo_path}/compare/main...${current_branch}?expand=1&title=$(echo "$pr_title" | sed 's/ /%20/g')"
 
     log_success "PR ready: $pr_url"
+    log_info "PR Title: $pr_title"
+    log_info "Version: $pr_version"
     log_info "Open this URL in browser to create the Pull Request."
     log_info "Fill in the PR template (.github/pull_request_template.md)"
 
@@ -198,6 +211,101 @@ open_pr() {
     elif command -v open >/dev/null; then
         open "$pr_url" 2>/dev/null &
     fi
+
+    # Cleanup
+    rm -f .git/pr_version
+}
+
+# ---------- Version Management ----------
+#
+# get_current_version: Extract current version from git tags
+# DESCRIPTION:
+#   Finds latest semantic version tag (vX.Y.Z)
+# OUTPUTS: Version string (e.g., v1.2.3) or v0.0.0 if none
+get_current_version() {
+    git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || echo "v0.0.0"
+}
+
+# bump_version: Calculate next version based on bump type
+# DESCRIPTION:
+#   Increments version per semantic versioning rules
+# ARGS: $1 = current version (e.g., v1.2.3), $2 = bump type (patch|minor|major)
+# OUTPUTS: New version string
+bump_version() {
+    local current="${1:-}"
+    local bump_type="${2:-patch}"
+    if [[ -z "$current" ]]; then
+        log_error "Usage: bump_version <current-version> [patch|minor|major]"
+        return 1
+    fi
+    local major minor patch
+    major=$(echo "$current" | sed -E 's/^v([0-9]+)\..*/\1/')
+    minor=$(echo "$current" | sed -E 's/^v[0-9]+\.([0-9]+)\..*/\1/')
+    patch=$(echo "$current" | sed -E 's/^v[0-9]+\.[0-9]+\.([0-9]+).*/\1/')
+    case "$bump_type" in
+        major) major=$((major + 1)); minor=0; patch=0 ;;
+        minor) minor=$((minor + 1)); patch=0 ;;
+        patch) patch=$((patch + 1)) ;;
+        *) log_error "Invalid bump type: $bump_type (use patch|minor|major)"; return 1 ;;
+    esac
+    echo "v${major}.${minor}.${patch}"
+}
+
+# suggest_version_bump: Analyze commits to suggest version bump
+# DESCRIPTION:
+#   Reads commit messages since last tag to suggest patch/minor/major
+# USE CASE: Auto-suggest version bump for PR
+suggest_version_bump() {
+    local current_version=$(get_current_version)
+    local commits=$(git log "$current_version..HEAD" --oneline --pretty=format:"%s" 2>/dev/null || git log --oneline --pretty=format:"%s")
+    local has_breaking=0
+    local has_feature=0
+    local has_fix=0
+
+    while IFS= read -r commit; do
+        if [[ "$commit" =~ ^feat!\(|^BREAKING CHANGE: ]]; then
+            has_breaking=1
+        elif [[ "$commit" =~ ^feat\( ]]; then
+            has_feature=1
+        elif [[ "$commit" =~ ^fix\( ]]; then
+            has_fix=1
+        fi
+    done <<< "$commits"
+
+    if [[ $has_breaking -eq 1 ]]; then
+        echo "major"
+    elif [[ $has_feature -eq 1 ]]; then
+        echo "minor"
+    else
+        echo "patch"
+    fi
+}
+
+# generate_pr_title: Create conventional PR title from commits
+# DESCRIPTION:
+#   Generates a clean PR title based on commit history
+# ARGS: $1 = plan ID (optional)
+# OUTPUTS: PR title string
+generate_pr_title() {
+    local plan_id="${1:-}"
+    local current_version=$(get_current_version)
+    local suggested_bump=$(suggest_version_bump)
+    local next_version=$(bump_version "$current_version" "$suggested_bump")
+    local commits=$(git log "$current_version..HEAD" --oneline --pretty=format:"%s" 2>/dev/null | head -5)
+
+    # Extract primary change from first commit
+    local first_commit=$(echo "$commits" | head -1)
+    local title=""
+    if [[ "$first_commit" =~ ^(feat|fix|refactor|docs|chore|test|plan)\(([^)]+)\):\ (.+) ]]; then
+        local type="${BASH_REMATCH[1]}"
+        local scope="${BASH_REMATCH[2]}"
+        local summary="${BASH_REMATCH[3]}"
+        title="${type}(${scope}): ${summary}"
+    else
+        title="chore: ${first_commit:-updates}"
+    fi
+
+    echo "${title} [${next_version}]"
 }
 
 # ---------- Release ----------
@@ -237,6 +345,56 @@ create_release() {
 
     log_success "Created release branch: $release_branch and tag: $version"
     log_info "Open PR from $release_branch to $main_branch for final review"
+}
+
+# version_bump: Interactive version bump for PR
+# DESCRIPTION:
+#   Prompts for bump type, calculates new version, creates tag on merge
+# USE CASE: Run before open_pr to prepare version
+version_bump() {
+    local current_version=$(get_current_version)
+    local suggested_bump=$(suggest_version_bump)
+    local next_patch=$(bump_version "$current_version" "patch")
+    local next_minor=$(bump_version "$current_version" "minor")
+    local next_major=$(bump_version "$current_version" "major")
+
+    echo ""
+    log_info "Current version: $current_version"
+    log_info "Suggested bump: $suggested_bump (based on commits)"
+    echo ""
+    echo "Select version bump:"
+    echo "  1) Patch  $next_patch  (bug fixes, small tweaks)"
+    echo "  2) Minor  $next_minor  (new features, non-breaking)"
+    echo "  3) Major  $next_major  (breaking changes)"
+    echo "  4) Custom version"
+    echo "  5) Skip version bump"
+    read -p "Choice [1-5] (default: $suggested_bump): " -n 1 -r choice
+    echo ""
+
+    local selected_version=""
+    case "${choice:-1}" in
+        1) selected_version="$next_patch" ;;
+        2) selected_version="$next_minor" ;;
+        3) selected_version="$next_major" ;;
+        4)
+            read -p "Enter custom version (e.g., v1.2.3): " selected_version
+            if [[ ! "$selected_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                log_error "Invalid version format"
+                return 1
+            fi
+            ;;
+        5)
+            log_info "Skipping version bump"
+            return 0
+            ;;
+        *) log_error "Invalid choice"; return 1 ;;
+    esac
+
+    log_success "Selected version: $selected_version"
+
+    # Store for PR creation
+    echo "$selected_version" > .git/pr_version
+    log_info "Version saved. Run 'open_pr' to create PR with version tag."
 }
 
 # ---------- Cleanup ----------
@@ -293,8 +451,8 @@ DESCRIPTION:
   Core workflow automation enforcing AGENTS.md rules:
   - Every change requires a plan (new_plan)
   - Commits must reference plan ID (validate_plan)
-  - All merges via PR (open_pr)
-  - Semantic versioning (create_release)
+  - All merges via PR with version bump (open_pr)
+  - Semantic versioning (create_release, version_bump)
   - Branch hygiene (cleanup_merged_branches)
 
 Plan Management:
@@ -302,8 +460,16 @@ Plan Management:
                           Use: Starting any new work
   validate_plan           Verify branch follows plan, commits reference plan ID
                           Use: Pre-PR check, CI gate
-  open_pr                 Push branch, generate PR URL, open browser
-                          Use: Ready for review
+  open_pr                 Version bump → push branch → PR URL with title
+                          Use: Ready for review (auto-generates title + version)
+
+Version Management:
+  version_bump            Interactive version bump (patch/minor/major/custom)
+                          Use: Before PR, selects semantic version
+  get_current_version     Show latest version tag
+  bump_version <v> <type> Calculate next version (patch|minor|major)
+  suggest_version_bump    Analyze commits, suggest bump type
+  generate_pr_title       Create conventional PR title from commits
 
 Release:
   create_release vX.Y.Z   Create annotated tag + release branch
@@ -321,6 +487,7 @@ Direct Execution:
   ./scripts/git-helpers.sh new_plan "Title"
   ./scripts/git-helpers.sh validate_plan
   ./scripts/git-helpers.sh open_pr
+  ./scripts/git-helpers.sh version_bump
   ./scripts/git-helpers.sh create_release v1.0.0
   ./scripts/git-helpers.sh cleanup
 EOF
@@ -332,8 +499,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         new_plan) shift; new_plan "$@" ;;
         validate_plan) validate_plan ;;
         open_pr) open_pr ;;
+        version_bump) version_bump ;;
         create_release) shift; create_release "$@" ;;
         cleanup) cleanup_merged_branches ;;
+        get_current_version) get_current_version ;;
+        bump_version) shift; bump_version "$@" ;;
+        suggest_version_bump) suggest_version_bump ;;
+        generate_pr_title) shift; generate_pr_title "$@" ;;
         *) git_helpers_help ;;
     esac
 fi
