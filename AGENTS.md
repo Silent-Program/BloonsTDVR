@@ -208,13 +208,29 @@ Use `scripts/attempt-track.sh` to log and check attempts:
 
 ```bash
 # Start new plan (creates plan doc + branch)
-./scripts/new-plan.sh "Short Title"
+./scripts/git-helpers.sh new_plan "Short Title"
+# or: source scripts/git-helpers.sh && new_plan "Short Title"
 
 # Validate current branch follows plan
-./scripts/validate-plan.sh
+./scripts/git-helpers.sh validate_plan
 
-# Open PR for current branch
-./scripts/open-pr.sh
+# Select version bump (interactive)
+./scripts/git-helpers.sh version_bump
+
+# Open PR for current branch (auto-generates title + version)
+./scripts/git-helpers.sh open_pr
+
+# Check current version
+./scripts/git-helpers.sh get_current_version
+
+# Suggest version bump from commits
+./scripts/git-helpers.sh suggest_version_bump
+
+# Create release tag
+./scripts/git-helpers.sh create_release v1.0.0
+
+# Clean up merged branches
+./scripts/git-helpers.sh cleanup
 ```
 
 ---
@@ -224,6 +240,50 @@ Use `scripts/attempt-track.sh` to log and check attempts:
 - `main` = production-ready, deployable state
 - No commit history rewriting on shared branches
 - Tag releases: `git tag -a vX.Y.Z -m "Release notes"`
+
+---
+
+## Pull Request & Version Bump Workflow
+
+### PR Requirements
+- **Every PR must include a version bump** (patch/minor/major)
+- **PR title follows conventional commits:** `type(scope): summary [vX.Y.Z]`
+- **PR description uses template** (`.github/pull_request_template.md`)
+- **Version bump determined by commit analysis:**
+  - `feat(...)` → **minor**
+  - `fix(...)` → **patch**
+  - `BREAKING CHANGE:` or `feat!...` → **major**
+  - Default: **patch**
+
+### PR Creation Flow
+```bash
+# 1. Implement plan on plan/<slug> branch
+# 2. Commit with conventional messages + Plan: #PLAN-...
+# 3. Run pre-PR validation
+source scripts/git-helpers.sh
+validate_plan
+
+# 4. Select version bump (interactive)
+version_bump
+# Shows current version, suggested bump, options for patch/minor/major/custom
+
+# 5. Open PR (auto-generates title with version)
+open_pr
+# Pushes branch, creates PR URL with title: "feat(skyrim-ui): add menu [v1.2.3]"
+# Opens browser to GitHub compare view with template pre-filled
+```
+
+### Version Bump Rules
+| Change Type | Bump | Example |
+|-------------|------|---------|
+| Bug fix, typo, small tweak | **patch** | `v1.2.3` → `v1.2.4` |
+| New feature, new tool, non-breaking | **minor** | `v1.2.3` → `v1.3.0` |
+| Breaking change, config restructure | **major** | `v1.2.3` → `v2.0.0` |
+
+### After PR Merge
+1. **Tag created automatically** on merge (via GitHub UI or `create_release`)
+2. **Changelog updated** in PR description
+3. **Downstream projects** run `./scripts/sync-template.sh` to pull changes
 
 ---
 
